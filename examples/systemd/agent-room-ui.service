@@ -1,0 +1,18 @@
+[Unit]
+Description=Agent Room dashboard
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=PATH=%h/.opencode/bin:%h/.local/bin:%h/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/bin/mkdir -p %h/.local/state/agent-room
+ExecStart=%h/.local/bin/aroom ui --no-open
+Restart=always
+RestartSec=5
+KillMode=process
+StandardOutput=append:%h/.local/state/agent-room/ui.log
+StandardError=append:%h/.local/state/agent-room/ui.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent Room supervisor
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=PATH=%h/.opencode/bin:%h/.local/bin:%h/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/bin/mkdir -p %h/.local/state/agent-room
+ExecStart=%h/.local/bin/aroom supervise --interval 60
+Restart=always
+RestartSec=5
+KillMode=process
+TimeoutStopSec=20
+StandardOutput=append:%h/.local/state/agent-room/supervisor.log
+StandardError=append:%h/.local/state/agent-room/supervisor.log
+
+[Install]
+WantedBy=default.target

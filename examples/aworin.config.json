@@ -1,0 +1,78 @@
+{
+  "project": "aworin",
+  "base_branch": "master",
+  "worktree_root": "~/.local/share/agent-room/worktrees/aworin",
+  "tasks": {
+    "adapter": "markdown",
+    "file": "docs/PLAN.md",
+    "id_regex": "M\\d+\\.\\d+"
+  },
+  "commands": {
+    "setup": [
+      "pnpm install"
+    ],
+    "checks": [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm test"
+    ],
+    "e2e": "pnpm e2e",
+    "e2e_on": [
+      "apps/web"
+    ],
+    "setup_timeout_min": 25,
+    "check_timeout_min": 25
+  },
+  "isolation": {
+    "env_script": ".agent/env.sh",
+    "copy_env": [
+      ".env",
+      "apps/api/.env",
+      "apps/queues/.env",
+      "apps/web/.env",
+      "packages/db/.env"
+    ],
+    "parallel_safe": true
+  },
+  "agents": {
+    "builder": {
+      "runner": "claude",
+      "model": "",
+      "timeout_min": 60
+    },
+    "verifier": {
+      "runner": "opencode",
+      "model": "",
+      "timeout_min": 40
+    },
+    "researcher": {
+      "runner": "claude",
+      "model": "",
+      "timeout_min": 40
+    }
+  },
+  "limits": {
+    "fix_rounds": 2,
+    "run_budget_usd": 20,
+    "auto_merge": false,
+    "max_tasks": 10
+  },
+  "paths": {
+    "allow": [],
+    "deny": []
+  },
+  "tick": {
+    "suffix": ""
+  },
+  "research": {
+    "auto": true,
+    "required": false,
+    "triggers": [
+      "\\bai\\b",
+      "\\bresearch\\b",
+      "\\bvendor\\b"
+    ],
+    "dir": "docs/research",
+    "timeout_min": 30
+  }
+}
