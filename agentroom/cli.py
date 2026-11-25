@@ -146,6 +146,12 @@ def cmd_status(args) -> int:
                 f"{'':<14} ↳ waiting {', '.join(str(w.get('task')) for w in waiting):<14} "
                 f"{'built, awaiting verifier':<24}"
             )
+        queued = lanes.get("queued") or []
+        if queued:
+            print(
+                f"{'':<14} ↳ queue   {str(len(queued)) + ' task(s)':<14} "
+                f"{'waiting for a builder slot':<24}"
+            )
     return 0
 
 
@@ -593,6 +599,28 @@ def cmd_async(args) -> int:
     return 0
 
 
+def cmd_requeue(args) -> int:
+    project, repo, _ = project_config.find_project(args.project)
+    task_ids = list(args.tasks)
+    if not task_ids:
+        root = os.path.join(repo, ".agent", "runs")
+        if os.path.isdir(root):
+            for folder in os.listdir(root):
+                run = util.read_json(os.path.join(root, folder, "run.json"), None) or {}
+                if run.get("state") in {"needs-human", "failed", "stopped"}:
+                    task_ids.append(run.get("task") or folder)
+    if not task_ids:
+        print(f"{project}: nothing to requeue")
+        return 0
+    for task_id in sorted(set(task_ids)):
+        try:
+            run = pipeline.requeue_task(project, task_id, note=args.note or "")
+            print(f"{project} {task_id} → {run['state']} ({run.get('step')})")
+        except SystemExit as exc:
+            print(f"{project} {task_id}: {exc}")
+    return 0
+
+
 def cmd_verify(args) -> int:
     project, repo, cfg = project_config.find_project(args.project)
     task_id = args.task
@@ -770,6 +798,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("project")
     p.add_argument("task")
     p.set_defaults(func=cmd_verify_phase)
+
+    p = sub.add_parser("requeue", help="return needs-human/failed runs to the builder queue")
+    p.add_argument("project", nargs="?")
+    p.add_argument("tasks", nargs="*")
+    p.add_argument("--note", help="instruction prepended to the builder's fix prompt")
+    p.set_defaults(func=cmd_requeue)
 
     p = sub.add_parser("verify", help="re-run checks + verifier on an existing branch")
     p.add_argument("project", nargs="?")

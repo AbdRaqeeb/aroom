@@ -175,6 +175,7 @@ merge passed runs. It polls the same run files the CLI writes.
 | `aroom merge [project] [task] [--force]` | Squash-merge a passed run and tick the task |
 | `aroom adopt [project] [task]` | Reconcile a hand-resolved squash merge as merged |
 | `aroom blocked / unblock` | List tasks the supervisor skipped, or allow one to run again |
+| `aroom requeue <project> [task...]` | Return needs-human/failed runs with worktrees to the builder queue |
 | `aroom config <project> <key> [value]` | Read or write any config key, e.g. `agents.verifier.model` |
 | `aroom research <project> <question>` | Research note into `docs/research/` |
 | `aroom ui [--port N] [--host H]` | Start the dashboard |

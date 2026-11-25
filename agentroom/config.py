@@ -51,6 +51,7 @@ DEFAULT_PROJECT: dict[str, Any] = {
         "async": False,
         "builders": 1,
         "verifiers": 2,
+        "requeue_attempts": 2,
     },
     "research": {
         "auto": True,

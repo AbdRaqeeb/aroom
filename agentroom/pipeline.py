@@ -1044,6 +1044,40 @@ def push_if_needed(project: str, force: bool = False) -> dict:
     return result
 
 
+def merge_lock_path(repo: str) -> str:
+    return os.path.join(repo, ".agent", "merge.lock")
+
+
+def acquire_merge_lock(repo: str, task_id: str) -> None:
+    path = merge_lock_path(repo)
+    util.ensure_dir(os.path.dirname(path))
+    for _ in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.close(fd)
+            util.write_json(path, {"pid": os.getpid(), "task": task_id, "started": util.now_iso()})
+            return
+        except FileExistsError:
+            existing = util.read_json(path, None) or {}
+            if util.pid_alive(existing.get("pid")):
+                raise SystemExit(
+                    f"another merge is already running for {existing.get('task')} "
+                    f"(pid {existing.get('pid')})"
+                )
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+    raise SystemExit("could not acquire the merge lock")
+
+
+def release_merge_lock(repo: str) -> None:
+    try:
+        os.unlink(merge_lock_path(repo))
+    except OSError:
+        pass
+
+
 def find_run(project: str, task_id: str | None = None) -> dict:
     _, repo, cfg = project_config.find_project(project)
     if task_id:
@@ -1085,6 +1119,7 @@ def merge_run(
     clean, status = gitops.is_clean(repo)
     if not clean:
         raise SystemExit(f"main checkout is not clean:\n{status}\nCommit or stash first.")
+    acquire_merge_lock(repo, run["task"])
     run["state"] = "merging"
     run["step"] = "squash merge"
     util.write_json(os.path.join(directory, "run.json"), run)
@@ -1104,6 +1139,10 @@ def merge_run(
                 ["git", "-C", repo, "commit", "-m", f"chore: mark {run['task']} done"],
                 check=False,
             )
+            check = tasklib.find_task(tasklib.load_tasks(cfg), run["task"])
+            if not check or check["state"] != "x":
+                run["tick_error"] = "tick did not persist; check the task file"
+                runners.emit(directory, run, "agent-room", "warn", run["tick_error"])
         push_result = push_if_needed(project, force=True)
         if push_result.get("enabled") and not push_result.get("ok"):
             runners.emit(
@@ -1167,6 +1206,7 @@ def merge_run(
             os.unlink(marker)
         except OSError:
             pass
+        release_merge_lock(repo)
 
 
 def verify_run(project: str, task_id: str, *, overrides: dict | None = None) -> dict:
@@ -1291,6 +1331,50 @@ def verify_run(project: str, task_id: str, *, overrides: dict | None = None) -> 
         release_lock(repo, task["id"])
 
 
+def requeue_task(project: str, task_id: str | None = None, note: str = "") -> dict:
+    """Put a needs-human/failed/stopped run back in the builder queue, keeping its worktree."""
+    _, repo, cfg = project_config.find_project(project)
+    run = find_run(project, task_id)
+    if run.get("state") not in {"needs-human", "failed", "stopped"}:
+        raise SystemExit(f"{project} {run.get('task')} is {run.get('state')}, not needs-human/failed/stopped")
+    worktree = run.get("worktree") or ""
+    if not worktree or not gitops.worktree_exists(repo, worktree):
+        raise SystemExit(
+            f"{project} {run.get('task')} has no worktree; run it fresh instead: "
+            f"aroom run {project} {run.get('task')} --fresh"
+        )
+    issues = (run.get("issues") or run.get("error") or "").strip()
+    if note:
+        issues = (note + "\n\n" + issues).strip()
+    run.update(
+        {
+            "state": "fixing",
+            "step": "requeued",
+            "round": 0,
+            "issues": issues or "Requeued for another attempt. Inspect the worktree, finish the task and commit.",
+            "verdict": "FAIL",
+            "error": None,
+            "finished": None,
+            "retry_after": None,
+            "build_failures": 0,
+            "verify_failures": 0,
+            "merge_failures": 0,
+            "integration_failures": 0,
+            "started": util.now_iso(),
+            "requeued_at": util.now_iso(),
+            "requeue_count": int(run.get("requeue_count") or 0) + 1,
+            "updated": util.now_iso(),
+        }
+    )
+    directory = run.get("run_dir") or run_dir(repo, run["task"])
+    util.ensure_dir(directory)
+    util.write_json(os.path.join(directory, "run.json"), run)
+    tasklib.unmark_blocked(repo, run["task"])
+    release_lock(repo, run["task"])
+    runners.emit(directory, run, "agent-room", "requeue", "returned to the builder queue")
+    return run
+
+
 def verify_task_phase(project: str, task_id: str, *, overrides: dict | None = None) -> dict:
     """Verify an already-built run, without rebuilding. Used by the async scheduler."""
     cfg = project_config.load_project(project_config.find_project(project)[1])
@@ -1387,6 +1471,11 @@ def verify_task_phase(project: str, task_id: str, *, overrides: dict | None = No
             runners.emit(directory, run, "agent-room", "pass", "PASS — branch ready")
         else:
             exhausted = round_no > fix_rounds
+            integration_conflict = verdict == "FAIL" and "conflicts with the current" in (issues or "")
+            integration_attempts = int(run.get("integration_failures") or 0)
+            if exhausted and integration_conflict and integration_attempts < 1:
+                exhausted = False
+                run["integration_failures"] = integration_attempts + 1
             run.update(
                 {
                     "state": "needs-human" if exhausted else "fixing",
@@ -1620,6 +1709,7 @@ def stop(project: str) -> bool:
         os.unlink(marker)
     except OSError:
         pass
+    release_merge_lock(repo)
     loop_file = os.path.join(repo, ".agent", "loop.json")
     loop = util.read_json(loop_file, None)
     if loop and util.pid_alive(loop.get("pid")):

@@ -183,21 +183,36 @@ def project_state(name: str, repo: str, external: list[dict] | None = None) -> d
     )
 
     active = [r for r in runs if r.get("state") in util.ACTIVE_STATES | util.WAITING_STATES]
+    scheduler = util.read_json(os.path.join(repo, ".agent", "scheduler.json"), None) or {}
+    lane_builders = set((scheduler.get("builders") or {}).keys())
+    lane_verifiers = set((scheduler.get("verifiers") or {}).keys())
+
+    def live(run: dict) -> bool:
+        task = run.get("task")
+        if task in lane_builders or task in lane_verifiers:
+            return True
+        return util.pid_alive(run.get("pid"))
+
     builders = [
         r
         for r in active
         if r.get("state") in {"queued", "briefing", "researching", "building", "checking", "fixing"}
+        and live(r)
     ]
     builders.sort(key=lambda r: r.get("started") or "")
     builder = builders[0] if builders else None
-    verifying = [r for r in active if r.get("state") == "verifying"]
+    verifying = [r for r in active if r.get("state") == "verifying" and live(r)]
     waiting = [r for r in active if r.get("state") == "built"]
+    queued = [
+        r for r in active if r.get("state") in {"fixing", "queued"} and not live(r)
+    ]
     entry["mode"] = "async" if cfg["limits"].get("async") else "sync"
     entry["lanes"] = {
         "builders": [_summary(r, events=0, probe=True) for r in builders],
         "builder": _summary(builder, events=0, probe=True) if builder else None,
         "verifiers": [_summary(r, events=0, probe=True) for r in verifying],
         "waiting": [_summary(r, events=0, probe=True) for r in waiting],
+        "queued": [_summary(r, events=0, probe=True) for r in queued],
         "capacity": int(cfg["limits"].get("verifiers", 1)),
         "build_capacity": int(cfg["limits"].get("builders", 1)),
     }

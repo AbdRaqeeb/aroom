@@ -57,6 +57,9 @@ aroom blocked <project>
 
 - `blocked.json` holds tasks the supervisor/scheduler will not retry. Inspect the
   reason, then `aroom unblock <project> <task>`.
+- `needs-human` runs are requeued automatically up to `limits.requeue_attempts`
+  (default 2). After that they are blocked. Requeue them again with
+  `aroom requeue <project>` once the cause is understood.
 - Existing non-merged runs are skipped by task selection. If a run is `needs-human`,
   resume/verify/re-verify or clean it.
 - A stale `loop.json` or a dead scheduler is handled by the supervisor within a

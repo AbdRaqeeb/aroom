@@ -93,8 +93,10 @@ prevents a branch that was built against an older base from silently breaking
 `main`/`master`.
 
 A FAIL with rounds left becomes `fixing`; the next build prompt contains only the
-verifier's findings. Exhausting `limits.fix_rounds` yields `needs-human` and blocks
-the task.
+verifier's findings. Exhausting `limits.fix_rounds` yields `needs-human`. The async
+scheduler then requeues such runs automatically up to `limits.requeue_attempts`
+times before blocking them for a human. `aroom requeue <project>` performs the same
+step manually.
 
 ## Async scheduler
 

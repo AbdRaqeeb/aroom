@@ -838,6 +838,7 @@ function lanesHtml(p) {
     rows.push(`<div class="lane verify"><b>verifier</b><span class="ltask">${esc(v.task)}</span><span class="lstep">${esc(v.step || '')}</span></div>`);
   }
   for (const w of l.waiting || []) rows.push(`<div class="lane wait"><b>built</b><span class="ltask">${esc(w.task)}</span><span class="lstep">waiting for a verifier</span></div>`);
+  if ((l.queued || []).length) rows.push(`<div class="lane wait"><b>queue</b><span class="lstep">${l.queued.length} task${l.queued.length === 1 ? '' : 's'} waiting for a builder</span></div>`);
   return rows.length ? `<div class="lanes">${rows.join('')}</div>` : '';
 }
 function queueHtml(p, current) {

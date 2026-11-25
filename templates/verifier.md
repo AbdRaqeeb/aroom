@@ -13,7 +13,7 @@ Work order: `{{BRIEF}}`
 
 1. Read the work order and `AGENTS.md`. Note the acceptance criteria and the project rules.
 2. Read the patch. Inspect the files it changes; read surrounding code where needed.
-3. The harness already ran {{CHECKS}} on this commit and they passed. Do **not** re-run the full suite. Run only the specific test files you add or change, plus a narrow command to confirm a suspected defect.
+3. The harness already ran {{CHECKS}} on this commit and they passed. Do **not** re-run the full suite, and never run the project-wide e2e command. Run only the specific unit/integration files you add or change. If a browser check is essential for this task, run only its spec file, not the whole Playwright project.
 4. For **each** acceptance criterion, find concrete evidence or fail it. "Looks right" is not evidence.
 5. Probe the risks: ownership/scoping, invalid input, error paths, idempotency, secrets in logs, generated files edited by hand — whichever apply.
 6. If the change is user-visible, add or extend a black-box test under the project's test folders. Do **not** edit implementation code.
@@ -53,6 +53,7 @@ Rules:
 
 - `Verdict: PASS` only if every acceptance criterion has evidence and the checks pass.
 - Any `[blocker]` or `[major]` issue means `Verdict: FAIL`.
+- A failure is only a blocker if it is caused by this diff. If it also fails on the base branch, or is in an unrelated page/spec, record it under "Environment note" and keep going.
 - You may edit tests and add new test files. Never edit implementation files, the brief, `AGENTS.md`, or the task file.
 - Do not weaken or delete existing tests.
 - Do not merge, push, or commit to the base branch.

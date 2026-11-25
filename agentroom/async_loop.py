@@ -386,6 +386,56 @@ def locked_tasks(repo: str) -> set[str]:
     }
 
 
+def auto_requeue(
+    project: str,
+    repo: str,
+    runs: dict[str, dict],
+    blocked: set[str],
+    limit: int,
+) -> int:
+    """Requeue needs-human/failed runs up to a bounded number of times."""
+    if limit <= 0:
+        return 0
+    touched = 0
+    blocked_now = set(blocked)
+    for task, run in sorted(runs.items(), key=lambda item: item[1].get("updated") or ""):
+        state = run.get("state")
+        if state not in {"needs-human", "failed"} or task in blocked_now:
+            continue
+        attempts = int(run.get("requeue_count") or 0)
+        if attempts >= limit:
+            if state == "needs-human":
+                tasklib.mark_blocked(
+                    repo, task, f"still needs a human after {attempts} automatic requeues"
+                )
+                log(f"{task}: blocked after {attempts} automatic requeues")
+            blocked_now.add(task)
+            continue
+        worktree = run.get("worktree") or ""
+        if not worktree or not gitops.worktree_exists(repo, worktree):
+            tasklib.mark_blocked(repo, task, "needs a human: no worktree to resume")
+            blocked_now.add(task)
+            log(f"{task}: blocked — no worktree to requeue")
+            continue
+        try:
+            pipeline.requeue_task(
+                project,
+                task,
+                note=(
+                    f"Automatic retry {attempts + 1}/{limit} after `{state}`. "
+                    "Read the findings, keep useful work, finish the task and commit."
+                ),
+            )
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            tasklib.mark_blocked(repo, task, f"requeue failed: {exc}")
+            blocked_now.add(task)
+            log(f"{task}: requeue failed — {exc}")
+            continue
+        touched += 1
+        log(f"{task}: requeued automatically ({attempts + 1}/{limit})")
+    return touched
+
+
 def merge_one(
     repo: str, project: str, lanes: dict, runs: dict[str, dict], blocked: set[str]
 ) -> bool:
@@ -404,6 +454,9 @@ def merge_one(
     try:
         result = pipeline.merge_run(project, task, auto_fix=True)
     except (Exception, SystemExit) as exc:  # noqa: BLE001
+        if "another merge is already running" in str(exc):
+            log(f"{task}: another merge is running; will retry")
+            return True
         tasklib.mark_blocked(repo, task, f"merge error: {exc}")
         log(f"{task}: merge error — {exc}")
         return True
@@ -563,6 +616,10 @@ def run_async(
             reap(repo, lanes, runs)
             runs = load_runs(repo)
             work = False
+            requeue_limit = int(cfg["limits"].get("requeue_attempts", 2))
+            if auto_requeue(project, repo, runs, blocked, requeue_limit):
+                work = True
+                runs = load_runs(repo)
             if cfg["limits"].get("auto_merge"):
                 if any(run.get("state") == "passed" for run in runs.values()):
                     save_lanes(repo, lanes)

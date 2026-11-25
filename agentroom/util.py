@@ -129,9 +129,18 @@ def pid_alive(pid: int | None) -> bool:
         return False
     try:
         os.kill(pid, 0)
-        return True
     except (OSError, ProcessLookupError):
         return False
+    # A zombie still accepts signal 0 but will never do work. Do not let a
+    # defunct loop/scheduler keep `.agent/loop.json` locked after a restart.
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as fh:
+            state = fh.read().split()[2]
+        if state == "Z":
+            return False
+    except (OSError, IndexError):
+        pass
+    return True
 
 
 def kill_tree(pid: int, sig: int = signal.SIGTERM) -> None:

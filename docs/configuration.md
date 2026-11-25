@@ -175,6 +175,7 @@ overrides: `aroom run … --builder-model`, `--verifier-model`, `--researcher-mo
 | `async` | Use the async builder/verifier scheduler |
 | `builders` | Concurrent builder lanes in async mode |
 | `verifiers` | Concurrent verifier workers in async mode |
+| `requeue_attempts` | Automatic retries for a `needs-human`/`failed` run before it is blocked (default 2) |
 
 For projects whose e2e uses fixed ports or one shared database, keep
 `builders: 1`. Raising it trades merge conflicts and resource contention for
