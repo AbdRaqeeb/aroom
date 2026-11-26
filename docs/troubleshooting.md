@@ -6,7 +6,8 @@ Start here:
 aroom --version
 aroom doctor
 aroom status
-systemctl --user status agent-room-ui.service agent-room-supervisor.service
+systemctl --user status agent-room-ui.service agent-room-supervisor.service   # Linux
+launchctl print gui/$(id -u)/com.agentroom.supervisor                        # macOS
 ```
 
 ## The UI does not load
@@ -14,7 +15,8 @@ systemctl --user status agent-room-ui.service agent-room-supervisor.service
 1. Is the service active?
 
    ```bash
-   systemctl --user restart agent-room-ui.service
+   systemctl --user restart agent-room-ui.service        # Linux
+   launchctl kickstart -k gui/$(id -u)/com.agentroom.ui  # macOS
    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4400/
    ```
 
@@ -41,10 +43,19 @@ ssh -L 4400:127.0.0.1:4400 you@host
 
 ## Services are inactive after reboot
 
+Linux:
+
 ```bash
 loginctl enable-linger "$USER"
 systemctl --user enable agent-room-ui.service agent-room-supervisor.service
 systemctl --user start agent-room-ui.service agent-room-supervisor.service
+```
+
+macOS (launchd agents are `RunAtLoad`, so they start at login):
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.ui.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.supervisor.plist
 ```
 
 ## A project is not moving

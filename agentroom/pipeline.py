@@ -1363,6 +1363,7 @@ def requeue_task(project: str, task_id: str | None = None, note: str = "") -> di
             "started": util.now_iso(),
             "requeued_at": util.now_iso(),
             "requeue_count": int(run.get("requeue_count") or 0) + 1,
+            "priority": int(run.get("priority") or 0) + 1,
             "updated": util.now_iso(),
         }
     )

@@ -2,20 +2,33 @@
 
 ## Install
 
+Agent Room runs from a checkout; nothing is published to PyPI or Homebrew. The
+clone can live anywhere — these docs use `~/.local/share/aroom`.
+
 ```bash
-bash ~/apps/agent-room/install.sh
-source ~/.bashrc
+# private repo: SSH key or `gh auth login` required
+gh repo clone AbdRaqeeb/aroom ~/.local/share/aroom
+# or: git clone git@github.com:AbdRaqeeb/aroom.git ~/.local/share/aroom
+
+~/.local/share/aroom/install.sh
+exec zsh                    # bash: exec bash --login
 aroom --version
 aroom doctor
 ```
 
-`install.sh` links `~/.local/bin/aroom` and adds a shell alias `ar` (the GNU
-archiver `/usr/bin/ar` is never shadowed).
+`install.sh` writes `~/.local/bin/aroom` (a wrapper around a Python 3.10+
+interpreter), adds `~/.local/bin` to `PATH`, and adds `alias ar="aroom"` once
+(the GNU archiver `/usr/bin/ar` is never shadowed). It is safe to re-run after
+moving the clone.
 
-## systemd user services
+On macOS the system `python3` may be 3.9; install a newer one with
+`brew install python@3.12`. The installer prefers `python3.13` … `python3.10`
+over `python3`.
 
-Copy the example units and adapt the paths if the repo is not at
-`~/apps/agent-room`:
+## systemd user services (Linux)
+
+Copy the example units. They call `~/.local/bin/aroom`, so they do not depend on
+where the checkout lives:
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -44,6 +57,36 @@ systemctl --user restart agent-room-supervisor.service
 systemctl --user stop agent-room-ui.service agent-room-supervisor.service
 ```
 
+## launchd agents (macOS)
+
+macOS has no systemd. Copy the templates in `examples/launchd`, replacing
+`__HOME__` with your home directory:
+
+```bash
+mkdir -p ~/Library/LaunchAgents ~/.local/state/agent-room
+for f in examples/launchd/*.plist; do
+    sed "s#__HOME__#$HOME#g" "$f" > "$HOME/Library/LaunchAgents/$(basename "$f")"
+done
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.ui.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.supervisor.plist
+```
+
+Both agents use `RunAtLoad` and `KeepAlive`, so they start at login and restart on
+failure. Logs go to `~/.local/state/agent-room/`.
+
+```bash
+launchctl print gui/$(id -u)/com.agentroom.supervisor   # status
+launchctl kickstart -k gui/$(id -u)/com.agentroom.supervisor
+launchctl bootout gui/$(id -u)/com.agentroom.supervisor
+```
+
+Without launchd, the same two processes can run in a terminal:
+
+```bash
+aroom ui --no-open &
+aroom supervise --interval 60
+```
+
 Restarting the **supervisor** does not stop project loops. To stop all work for one
 project:
 
@@ -58,10 +101,10 @@ supervisor will start a new scheduler on its next tick.
 ### Logs
 
 ```bash
-journalctl --user -u agent-room-ui -n 100 --no-pager
-journalctl --user -u agent-room-supervisor -n 100 --no-pager
-tail -f ~/.local/state/agent-room/supervisor.log
-tail -f ~/.local/state/agent-room/ui.log
+journalctl --user -u agent-room-ui -n 100 --no-pager          # Linux
+journalctl --user -u agent-room-supervisor -n 100 --no-pager  # Linux
+tail -f ~/.local/state/agent-room/supervisor.log              # both
+tail -f ~/.local/state/agent-room/ui.log                      # both
 ```
 
 Per-task logs live in `<repo>/.agent/runs/<task>/` (`builder.log`, `verifier.log`,
@@ -69,7 +112,8 @@ Per-task logs live in `<repo>/.agent/runs/<task>/` (`builder.log`, `verifier.log
 
 ## Reboot recovery
 
-Services start automatically when enabled with lingering.
+Services start automatically when enabled (systemd lingering, or launchd
+`RunAtLoad`).
 
 The async scheduler recovers runs left in an active state:
 
@@ -84,7 +128,8 @@ Manual runs (`aroom run`) are not adopted; start them again if they were interru
 
 ## Rolling scheduler restart (no work lost)
 
-Normally use `systemctl --user restart agent-room-supervisor.service`; project
+Normally use `systemctl --user restart agent-room-supervisor.service` (Linux) or
+`launchctl kickstart -k gui/$(id -u)/com.agentroom.supervisor` (macOS); project
 schedulers keep running. To load new scheduler code without killing builders or
 verifiers:
 
@@ -116,11 +161,16 @@ only help debugging a failed task.
 ## Upgrades
 
 ```bash
-cd ~/apps/agent-room
-git pull
-./install.sh
-systemctl --user restart agent-room-ui.service
-systemctl --user restart agent-room-supervisor.service
+git -C ~/.local/share/aroom pull --ff-only
+~/.local/share/aroom/install.sh
+```
+
+Then restart the services:
+
+```bash
+systemctl --user restart agent-room-ui.service agent-room-supervisor.service  # Linux
+launchctl kickstart -k gui/$(id -u)/com.agentroom.ui                         # macOS
+launchctl kickstart -k gui/$(id -u)/com.agentroom.supervisor
 ```
 
 Active async schedulers keep their loaded code until restarted; use the rolling
@@ -131,7 +181,7 @@ restart above or wait for a natural restart.
 ```bash
 aroom clean aworin                 # remove finished/merged worktrees
 aroom clean aworin M5.2.1          # remove one task's worktree/branch
-git -C ~/apps/aworin worktree list
+git -C /path/to/aworin worktree list
 ```
 
 Never delete a worktree that still has uncommitted agent work unless you intend to

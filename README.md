@@ -9,7 +9,7 @@ The dashboard shows every project and every run in one place.
 No server, no database, no agent framework. State is git branches plus JSON/JSONL
 files under each repo's `.agent/`.
 
-**v1.0.0** · Python stdlib · Claude Code, OpenCode, or a deterministic mock runner.
+**v1.0.1** · Python stdlib · Claude Code, OpenCode, or a deterministic mock runner.
 
 ## Requirements
 
@@ -18,31 +18,65 @@ files under each repo's `.agent/`.
 - Optional: `gh` for GitHub task adapter and releases
 - Each managed project must be a git repo with a clean base branch
 
+On macOS the system `python3` is still 3.9 on many machines. Install a newer one
+with `brew install python@3.12` (or from python.org); `install.sh` finds it even
+when `python3` itself is too old.
+
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
 | [docs/configuration.md](docs/configuration.md) | Every `.agent/config.json` key, adapters, roles, limits, push, preview |
 | [docs/architecture.md](docs/architecture.md) | Modules, run state machine, async lanes, locks, merge and push flow |
-| [docs/operations.md](docs/operations.md) | systemd user services, logs, reboot recovery, backups, upgrades |
+| [docs/operations.md](docs/operations.md) | systemd/launchd services, logs, reboot recovery, backups, upgrades |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | UI/loop failures, stuck tasks, conflicts, push and quota errors |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## Install
 
+Agent Room runs from a checkout of this repo. The installer only links a
+launcher and shell integration, so the clone can live anywhere; the examples use
+`~/.local/share/aroom`.
+
+**1. Clone the repo** (it is private, so use SSH or `gh`):
+
 ```bash
-bash ~/apps/agent-room/install.sh
-source ~/.bashrc        # or ~/.zshrc
+gh repo clone AbdRaqeeb/aroom ~/.local/share/aroom
+# or, with an SSH key:
+git clone git@github.com:AbdRaqeeb/aroom.git ~/.local/share/aroom
+# or HTTPS with a personal access token when prompted for a password:
+git clone https://github.com/AbdRaqeeb/aroom.git ~/.local/share/aroom
+```
+
+**2. Install the launcher:**
+
+```bash
+~/.local/share/aroom/install.sh
+exec zsh                    # bash: exec bash --login
+aroom --version
 aroom doctor
 ```
 
-`aroom` lands in `~/.local/bin`. The installer also adds `alias ar="aroom"`
-because `/usr/bin/ar` is the GNU archiver and must not be shadowed.
+`install.sh` is safe to re-run. It:
+
+- picks a Python 3.10+ interpreter (including Homebrew `python3.12` when the
+  macOS system `python3` is 3.9) and writes a launcher that uses it
+- puts `aroom` in `~/.local/bin`
+- adds `~/.local/bin` to `PATH` and `alias ar="aroom"` to your shell rc, once
+  (`/usr/bin/ar` is the GNU archiver, so it is never shadowed)
+
+If you move the clone, run its `install.sh` again to repoint the launcher.
+
+**Upgrade:**
+
+```bash
+git -C ~/.local/share/aroom pull --ff-only
+```
 
 ## Quick start
 
 ```bash
-cd ~/apps/aworin
+cd /path/to/your-project
 aroom init .                 # detect tasks, commands, base branch; register
 aroom next                   # show the next open task
 aroom run --mock             # end-to-end dry run with a fake model (free)
@@ -373,7 +407,7 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 
 ## Run it as a service
 
-Ready-to-copy systemd user units live in
+**Linux** — ready-to-copy systemd user units live in
 [examples/systemd](examples/systemd). They enable lingering, restart on failure,
 and keep loops alive across logout/reboot:
 
@@ -383,6 +417,18 @@ cp examples/systemd/*.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now agent-room-supervisor.service agent-room-ui.service
 loginctl enable-linger "$USER"
+```
+
+**macOS** — there is no systemd. Use the launchd agents in
+[examples/launchd](examples/launchd):
+
+```bash
+mkdir -p ~/Library/LaunchAgents ~/.local/state/agent-room
+for f in examples/launchd/*.plist; do
+    sed "s#__HOME__#$HOME#g" "$f" > "$HOME/Library/LaunchAgents/$(basename "$f")"
+done
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.ui.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentroom.supervisor.plist
 ```
 
 Then open <http://127.0.0.1:4400>. See

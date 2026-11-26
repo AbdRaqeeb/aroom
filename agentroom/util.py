@@ -160,24 +160,59 @@ def kill_tree(pid: int, sig: int = signal.SIGTERM) -> None:
             pass
 
 
+def _cwd_pids_lsof(prefix: str) -> list[int]:
+    """Processes whose cwd is under `prefix`, using lsof (macOS, no /proc)."""
+    try:
+        proc = subprocess.run(
+            ["lsof", "-a", "-d", "cwd", "-Fpn", "-w"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found: list[int] = []
+    pid: int | None = None
+    for line in proc.stdout.splitlines():
+        if line.startswith("p"):
+            try:
+                pid = int(line[1:])
+            except ValueError:
+                pid = None
+        elif line.startswith("n") and pid:
+            path = line[1:]
+            if path == prefix or path.startswith(prefix + os.sep):
+                found.append(pid)
+    return found
+
+
 def kill_cwd_processes(prefix: str, sig: int = signal.SIGTERM) -> int:
     """Kill processes whose cwd is inside a worktree (leaked dev servers)."""
     prefix = os.path.abspath(prefix)
     killed = 0
     me = os.getpid()
-    for entry in os.listdir("/proc"):
-        if not entry.isdigit():
-            continue
-        pid = int(entry)
+    if os.path.isdir("/proc"):
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            if pid == me:
+                continue
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                continue
+            if cwd == prefix or cwd.startswith(prefix + os.sep):
+                kill_tree(pid, sig)
+                killed += 1
+        return killed
+
+    # macOS: no /proc, ask lsof instead.
+    for pid in _cwd_pids_lsof(prefix):
         if pid == me:
             continue
-        try:
-            cwd = os.readlink(f"/proc/{pid}/cwd")
-        except OSError:
-            continue
-        if cwd == prefix or cwd.startswith(prefix + os.sep):
-            kill_tree(pid, sig)
-            killed += 1
+        kill_tree(pid, sig)
+        killed += 1
     return killed
 
 

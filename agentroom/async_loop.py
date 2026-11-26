@@ -278,6 +278,8 @@ def recover_orphans(repo: str, lanes: dict, runs: dict[str, dict]) -> None:
         state = run.get("state")
         if state not in util.ACTIVE_STATES or task in lane_tasks:
             continue
+        if state in {"fixing", "queued"}:
+            continue  # waiting for a builder slot, not orphaned
         if util.pid_alive(run.get("pid")):
             continue
         worktree = run.get("worktree") or ""
@@ -533,7 +535,10 @@ def next_builds(
         and run.get("task") not in builders
         and retry_ready(run)
     ]
-    for run in sorted(fixing, key=lambda r: r.get("updated") or ""):
+    fixing.sort(
+        key=lambda r: (-int(r.get("priority") or 0), r.get("updated") or "")
+    )
+    for run in fixing:
         if len(picked) >= free:
             break
         task = run.get("task")
