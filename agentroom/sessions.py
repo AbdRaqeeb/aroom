@@ -23,7 +23,8 @@ _MAX_EVENTS = 120
 
 def claude_agents() -> list[dict]:
     now = time.time()
-    if _AGENTS_CACHE["data"] and now - _AGENTS_CACHE["at"] < 3:
+    # `claude agents` takes seconds on a busy machine; live sessions change slowly.
+    if _AGENTS_CACHE["at"] and now - _AGENTS_CACHE["at"] < 15:
         return _AGENTS_CACHE["data"]
     proc = util.run(["claude", "agents", "--json"], timeout=15)
     data: list[dict] = []

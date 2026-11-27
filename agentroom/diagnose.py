@@ -25,6 +25,7 @@ from .supervisor import TRANSIENT as _SUPERVISOR_TRANSIENT
 from . import tasks as tasklib
 
 TRANSIENT = _SUPERVISOR_TRANSIENT
+ACCOUNT = re.compile(r"subscription|payment|past due|billing|credit balance|insufficient (funds|credit)", re.I)
 CONFLICT = re.compile(r"conflict|squash merge failed|CONFLICT \(", re.I)
 
 
@@ -120,7 +121,15 @@ def _classify_run(run: dict, base_dirty: bool) -> dict:
                 "next": "Resolve the conflicting files here (pick a side or edit), or send it back to the agent to merge the base and fix.",
                 "actions": ["resolve", "agent-fix", "retry-merge", "mark-merged"],
             }
-    elif state == "failed" and TRANSIENT.search(error + " " + str(run.get("error_detail") or "")):
+    elif ACCOUNT.search(error + " " + str(run.get("error_detail") or "")):
+        p = {
+            "kind": "quota",
+            "headline": "The agent's account can't be used (billing or subscription)",
+            "summary": f"The {run.get('builder_runner') or 'agent'} CLI refused to start, so every task on this runner fails the same way until the account is fixed or the project switches models.",
+            "next": "Fix the billing/subscription for that account, or switch the project's builder and verifier to another runner/model (⚙ models), then resume.",
+            "actions": ["resume", "unblock"],
+        }
+    elif state in {"failed", "needs-human"} and TRANSIENT.search(error + " " + str(run.get("error_detail") or "")):
         p = {
             "kind": "quota",
             "headline": "Model quota or rate limit hit",
@@ -170,6 +179,14 @@ def _classify_run(run: dict, base_dirty: bool) -> dict:
             "next": "Read the error below. If it is environmental (missing tool, auth), fix that and resume; otherwise resume with guidance or start over.",
             "actions": ["resume", "agent-fix", "reverify", "run-fresh", "clean"],
         }
+    elif "produced no commits" in error or step == "builder failed":
+        p = {
+            "kind": "build-failed",
+            "headline": "Builder finished without committing anything",
+            "summary": f"The builder ran {run.get('round') or 1} round(s) but left no commits on the branch, so there is nothing to check or verify. Usually the task was unclear, already done, or the agent got stuck; its notes and the last events are below.",
+            "next": "Read the agent's notes. If the work is already in the base, mark the task done; otherwise send it back with clearer guidance or start over.",
+            "actions": ["agent-fix", "run-fresh", "clean"],
+        }
     elif state == "needs-human":
         p = {
             "kind": "needs-human",
@@ -207,7 +224,9 @@ def _dedupe(seq: list[str]) -> list[str]:
     return out
 
 
-def for_project(name: str, repo: str, cfg: dict, runs: list[dict], git: dict | None = None) -> list[dict]:
+def for_project(
+    name: str, repo: str, cfg: dict, runs: list[dict], git: dict | None = None, loop_alive: bool = False
+) -> list[dict]:
     problems: list[dict] = []
     blocked = tasklib.load_blocked(repo)
     git = git or {}
@@ -219,9 +238,10 @@ def for_project(name: str, repo: str, cfg: dict, runs: list[dict], git: dict | N
         state = run.get("state")
         stalled = run.get("stalled")
         if stalled and state in {"queued", "fixing"}:
-            # Requeued work waits for a free builder; only flag a long wait.
+            # Requeued work waits for a free builder. That is only a problem
+            # when no loop is running to pick it up, and then only after a while.
             updated = util.parse_iso(run.get("updated")) or 0
-            stalled = bool(updated and time.time() - updated > 3600)
+            stalled = (not loop_alive) and bool(updated and time.time() - updated > 1800)
         if state not in {"needs-human", "failed"} and not stalled and task not in blocked:
             continue
         if state in {"merged", "passed"} and task not in blocked:
@@ -230,10 +250,14 @@ def for_project(name: str, repo: str, cfg: dict, runs: list[dict], git: dict | N
             waiting = state in {"queued", "fixing"}
             p = {
                 "kind": "stalled",
-                "headline": "Waiting over an hour for a builder" if waiting else f"Run looks stuck ({state})",
-                "summary": f"The run has been `{state}` with no progress for over 10 minutes, or its process died.",
-                "next": "Stop it and resume, or wait if a long check is running.",
-                "actions": ["stop", "resume"],
+                "headline": "Queued, but no loop is running to pick it up" if waiting else f"Run looks stuck ({state})",
+                "summary": (
+                    "It is waiting for a builder, but the project's loop is not running."
+                    if waiting
+                    else f"The run has been `{state}` with no progress for over 10 minutes, or its process died."
+                ),
+                "next": "Start the loop (or the supervisor), or resume this task directly." if waiting else "Stop it and resume, or wait if a long check is running.",
+                "actions": ["resume"] if waiting else ["stop", "resume"],
             }
         else:
             p = _classify_run(run, base_dirty)
@@ -393,7 +417,8 @@ def full(name: str, repo: str, cfg: dict, problem: dict, run: dict | None) -> di
                 "\n".join(files) if files else f"No conflicts now: `{base}` and the branch merge cleanly. Retry the merge.",
                 "code",
             )
-        add("Verifier findings", str(run.get("issues") or ""))
+        if str(run.get("issues") or "").strip() not in str(run.get("error") or ""):
+            add("Verifier findings", str(run.get("issues") or ""))
         verify = _read(os.path.join(directory, "verify.md"), 30000)
         if verify and verify.strip() != str(run.get("issues") or "").strip():
             add("verify.md (full)", verify)

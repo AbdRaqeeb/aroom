@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from . import util
 
@@ -34,6 +35,36 @@ def worktree_exists(repo: str, path: str) -> bool:
         if line.startswith("worktree ") and util.expand(line[len("worktree ") :]) == target:
             return True
     return False
+
+
+_PROBE_CACHE: dict[tuple[str, str], tuple[float, set[str]]] = {}
+_PROBE_TTL = 4.0
+
+
+def _probe(repo: str, what: str) -> set[str]:
+    """One git call per repo for the dashboard's existence probes, reused briefly."""
+    key = (repo, what)
+    now = time.time()
+    hit = _PROBE_CACHE.get(key)
+    if hit and now - hit[0] < _PROBE_TTL:
+        return hit[1]
+    if what == "worktrees":
+        out = _git(repo, "worktree", "list", "--porcelain", check=False).stdout
+        values = {util.expand(l[len("worktree ") :]) for l in out.splitlines() if l.startswith("worktree ")}
+    else:
+        out = _git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads", check=False).stdout
+        values = {l.strip() for l in out.splitlines() if l.strip()}
+    _PROBE_CACHE[key] = (now, values)
+    return values
+
+
+def worktree_exists_cached(repo: str, path: str) -> bool:
+    """Read-only dashboard probe; write paths use worktree_exists()."""
+    return bool(path) and util.expand(path) in _probe(repo, "worktrees")
+
+
+def branch_exists_cached(repo: str, branch: str) -> bool:
+    return bool(branch) and branch in _probe(repo, "branches")
 
 
 def is_clean(repo: str, include_untracked: bool = False) -> tuple[bool, str]:
@@ -243,8 +274,8 @@ def inventory(repo: str) -> dict:
             remotes.append({"name": parts[0], "url": url, "link": remote_link(url)})
 
     fmt = (
-        "%(refname:short)%x00%(objectname:short)%x00%(upstream:short)%x00"
-        "%(upstream:track)%x00%(committerdate:relative)%x00%(subject)"
+        "%(refname:short)%00%(objectname:short)%00%(upstream:short)%00"
+        "%(upstream:track)%00%(committerdate:relative)%00%(subject)"
     )
     branches: list[dict] = []
     current = current_branch(repo)

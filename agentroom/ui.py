@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from http.cookies import SimpleCookie
@@ -14,10 +16,11 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from . import auth
 from . import config as project_config
-from . import conflicts, diagnose
+from . import activity, conflicts, diagnose
 from . import chat, gitops, models, pipeline, preview, runners, sessions, tasks as tasklib, util
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+APP_DIR = os.path.join(ASSETS, "app")
 AR_MAIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ar")
 
 
@@ -99,8 +102,8 @@ def _summary(run: dict, events: int = 6, probe: bool = False) -> dict:
         repo = run.get("repo", "")
         worktree = run.get("worktree", "")
         branch = run.get("branch", "")
-        out["worktree_exists"] = bool(repo and worktree and gitops.worktree_exists(repo, worktree))
-        out["branch_exists"] = bool(repo and branch and gitops.branch_exists(repo, branch))
+        out["worktree_exists"] = bool(repo and worktree and gitops.worktree_exists_cached(repo, worktree))
+        out["branch_exists"] = bool(repo and branch and gitops.branch_exists_cached(repo, branch))
     return out
 
 
@@ -256,7 +259,8 @@ def project_state(name: str, repo: str, external: list[dict] | None = None) -> d
         None,
     )
     entry["problems"] = diagnose.for_project(
-        name, repo, cfg, [_candidate(r) for r in runs if _maybe_problem(r, entry["blocked"])], entry.get("git")
+        name, repo, cfg, [_candidate(r) for r in runs if _maybe_problem(r, entry["blocked"])], entry.get("git"),
+        loop_alive=bool(entry.get("loop") and entry["loop"].get("alive")),
     )
     entry["current"] = _summary(current, events=8, probe=True) if current else None
     entry["attention"] = _summary(attention, events=4, probe=True) if attention else None
@@ -268,6 +272,58 @@ def gitops_state(repo: str) -> dict:
         return gitops.detail(repo)
     except Exception:  # noqa: BLE001
         return {"branch": "", "clean": True, "head": "", "short": "", "subject": ""}
+
+
+class _StateCache:
+    """Serve /api/state from a snapshot rebuilt in the background.
+
+    Building state shells out to git and the agent CLIs dozens of times; on a
+    busy machine that takes seconds. Requests get the latest snapshot at once
+    while a single worker keeps it fresh, and the worker idles when nobody has
+    asked for a minute.
+    """
+
+    def __init__(self) -> None:
+        self.data: dict | None = None
+        self.at = 0.0
+        self.asked = 0.0
+        self.lock = threading.Lock()
+        self.wake = threading.Event()
+        self.thread: threading.Thread | None = None
+
+    def _loop(self) -> None:
+        while True:
+            if time.time() - self.asked > 60:
+                self.wake.wait(30)
+                self.wake.clear()
+                continue
+            self._build()
+            time.sleep(1.5)
+
+    def _build(self) -> None:
+        try:
+            data = build_state()
+        except Exception as exc:  # noqa: BLE001
+            data = dict(self.data or {}, error=f"{type(exc).__name__}: {exc}")
+        with self.lock:
+            self.data, self.at = data, time.time()
+
+    def get(self, fresh: bool = False) -> dict:
+        self.asked = time.time()
+        if self.thread is None:
+            self.thread = threading.Thread(target=self._loop, name="state-cache", daemon=True)
+            self.thread.start()
+        self.wake.set()
+        if self.data is None or fresh:
+            self._build()
+        return self.data  # type: ignore[return-value]
+
+    def invalidate(self) -> None:
+        self.at = 0.0
+        self.wake.set()
+
+
+STATE = _StateCache()
 
 
 def build_state() -> dict:
@@ -683,6 +739,32 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._redirect(nxt, self._session_cookie(token))
 
+    def _serve_app(self, path: str) -> None:
+        """The built web app: hashed assets, and index.html for every app route."""
+        if path.startswith("/assets/"):
+            full = os.path.realpath(os.path.join(APP_DIR, path.lstrip("/")))
+            if not full.startswith(os.path.realpath(APP_DIR) + os.sep) or not os.path.isfile(full):
+                self._error("not found", 404)
+                return
+            ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+            if ctype.startswith("text/") or ctype in {"application/javascript", "image/svg+xml"}:
+                ctype += "; charset=utf-8"
+            with open(full, "rb") as fh:
+                body = fh.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        index = os.path.join(APP_DIR, "index.html")
+        if not os.path.isfile(index):
+            self._error("dashboard is not built; run `bun run build` in web/", 500)
+            return
+        with open(index, "rb") as fh:
+            self._send(200, fh.read(), "text/html; charset=utf-8")
+
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -697,19 +779,14 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         if not self._gate_get(parsed, query):
             return
-        if parsed.path in {"/", "/index.html"}:
-            path = os.path.join(ASSETS, "index.html")
-            try:
-                with open(path, "rb") as fh:
-                    self._send(200, fh.read(), "text/html; charset=utf-8")
-            except OSError:
-                self._error("dashboard asset missing", 500)
+        if not parsed.path.startswith("/api/"):
+            self._serve_app(parsed.path)
             return
         if parsed.path == "/api/health":
             self._json({"ok": True})
             return
         if parsed.path == "/api/state":
-            state = build_state()
+            state = dict(STATE.get(fresh=(query.get("fresh") or [""])[0] == "1"))
             state["auth"] = bool(auth.load_token())
             self._json(state)
             return
@@ -719,6 +796,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = {"project": name, "git": gitops.detail(repo)}
             payload.update(gitops.inventory(repo))
             self._json(payload)
+            return
+        if parsed.path == "/api/activity":
+            limit = int((query.get("limit") or ["300"])[0])
+            self._json({"events": activity.feed(min(limit, 1000), (query.get("project") or [""])[0])})
             return
         if parsed.path == "/api/problem":
             project = (query.get("project") or [""])[0]

@@ -106,9 +106,17 @@ git add .agent .gitignore && git commit -m "chore: add agent room config"
 `aroom ui` serves one page for **every registered project**, wherever it lives.
 It polls each repo's `.agent/runs/*/run.json` and shows:
 
-- a **needs you** inbox: every stuck task across projects, with the reason in
-  plain words, the full evidence, and buttons that fix it (including a merge
-  conflict resolver that runs in the task's worktree)
+- **Overview**: what needs you first, then a timing tower of every running,
+  waiting and queued task across projects with its brief → build → check →
+  verify → merge pipeline
+- **Needs you**: every stuck task, grouped by cause, with the reason in plain
+  words, the full evidence, and buttons that fix it, including a merge conflict
+  resolver that runs in the task's worktree
+- **Activity**: a cross-project timeline of starts, verdicts, merges and failures
+- **Projects**: progress per project; each project page has tasks, git,
+  preview (with console) and chat with the project's agent
+- light and dark themes, a phone layout with a bottom tab bar, and optional
+  browser notifications when something new needs you
 - project cards with the current task, state, step, elapsed time, cost and checks
 - the event stream (tool calls from Claude Code / OpenCode)
 - passed / needs-human / failed runs that need a merge or a look
@@ -124,6 +132,21 @@ The UI can start, stop and merge runs. It binds `127.0.0.1` by default. Once
 an access token exists (`aroom token --new`, or automatically with
 `--host 0.0.0.0` or `--service`), every request must sign in. To use it from
 another device, see [docs/remote.md](docs/remote.md).
+
+## Dashboard development
+
+The dashboard is a React app in `web/` (React 19, TypeScript, Vite, Tailwind v4,
+TanStack Router and Query). Its build output is committed to
+`agentroom/assets/app/`, so installs never need Node. To change it:
+
+```bash
+cd web
+bun install                 # or npm install
+bun run dev                 # http://localhost:5173, proxies /api to 127.0.0.1:4400
+bun run build               # writes agentroom/assets/app/; commit it with the source
+```
+
+Set `AROOM_API=http://127.0.0.1:4992` to point the dev server at another `aroom ui`.
 
 ## Switching runners and models
 

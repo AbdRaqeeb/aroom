@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.2.0 — 2026-11-27
+
+### New dashboard
+
+- Rewritten as a React app (`web/`: React 19, TypeScript, Vite, Tailwind v4,
+  TanStack Router/Query, Radix). The build is committed to `agentroom/assets/app/`,
+  so `curl | bash` installs still need no Node.
+- Pages: **Overview** (needs-you first, then the timing tower), **Needs you**
+  (filterable inbox; problems with one cause are grouped, with "do it for all"
+  actions), **Activity** (cross-project timeline), **Projects** and a page per
+  project (overview, tasks, git, preview console, chat). The run detail sheet
+  and every fix panel deep-link (`?run=project/task`).
+- Timing tower: every live, waiting, queued and ready task with a five-sector
+  pipeline bar. State reads by line form as well as colour.
+- Light and dark themes (system by default), phone layout with a bottom tab bar,
+  unread count in the tab title, optional browser notifications.
+
+### Server
+
+- `/api/state` is served from a snapshot rebuilt in the background, so requests
+  return immediately even when building state takes seconds on a busy machine.
+  Git existence probes are batched per repo; live session detection is cached 15s.
+- `GET /api/activity`: notable pipeline events across projects (cached per file).
+- Diagnosis: billing/subscription failures get their own explanation; "builder
+  produced no commits" is explained; queued tasks are only flagged when no loop
+  is running.
+- Fixed the git branch list (`for-each-ref` separator).
+- Chat and run documents render markdown (tables, code, lists; raw HTML is never rendered). A page error no longer blanks the app.
+
+
 ## v1.1.0 — 2026-11-26
 
 Install with one command; use the dashboard from your phone.
