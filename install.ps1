@@ -169,8 +169,9 @@ if ($Service) {
     if (-not $port) { $port = 4400 }
     Say "service:" "'Agent Room dashboard' + 'Agent Room supervisor' in Task Scheduler (dashboard on http://${Listen}:$port)"
     Say "" "start at logon, come back within a minute if they stop; logs in $StateDir"
-    Say "" "stop:    Stop-ScheduledTask 'Agent Room dashboard'"
-    Say "" "remove:  Unregister-ScheduledTask 'Agent Room dashboard' -Confirm:`$false"
+    Say "" "pause:   Disable-ScheduledTask 'Agent Room dashboard'; Stop-ScheduledTask 'Agent Room dashboard'"
+    Say "" "resume:  Enable-ScheduledTask 'Agent Room dashboard'"
+    Say "" "remove:  Unregister-ScheduledTask 'Agent Room*' -Confirm:`$false"
     $token = & $Launcher token 2>$null
     if ($LASTEXITCODE -eq 0 -and $token) { Say "token:" $token }
 }

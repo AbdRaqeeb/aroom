@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3.2 — 2026-11-27
+
+Windows `-Service`, tested on a real Windows 11 machine.
+
+- The tasks now come back within a minute when the process dies. Task
+  Scheduler's restart-on-failure only covers launches that fail, so a crashed or
+  killed `pythonw.exe` used to stay down. In the test, a killed dashboard was
+  back in 34s, with no duplicate instances.
+- Pausing a task now means disabling it (the every-minute trigger would restart
+  a merely stopped one). The installer prints pause, resume and remove commands.
+- The service message shows the configured dashboard port.
+- `docs/windows.md`: pausing, and running both a WSL and a Windows dashboard
+  (port 4400 conflict).
+
+
 ## v1.3.1 — 2026-11-27
 
 Found by running the installer and a full pipeline on native Windows.

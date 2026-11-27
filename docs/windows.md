@@ -46,16 +46,27 @@ from Git Bash hands over to `install.ps1`.
 
 `-Service` registers two Task Scheduler tasks for your user, **Agent Room
 dashboard** and **Agent Room supervisor**. They run with `pythonw.exe`, so no
-console windows open, start when you log in, and restart if they fail. Logs go
-to `%USERPROFILE%\.local\state\agent-room\ui.log` and `supervisor.log`.
+console windows open. They start when you log in, and a trigger that repeats
+every minute brings them back if the process dies. A running copy is never
+started twice. Logs go to `%USERPROFILE%\.local\state\agent-room\ui.log` and
+`supervisor.log`.
+
+Because of the every-minute trigger, `Stop-ScheduledTask` alone only stops a
+task until the next minute. To pause a task, disable it as well:
 
 ```powershell
-Get-ScheduledTask 'Agent Room*'                              # status
-Stop-ScheduledTask  'Agent Room dashboard'                   # stop
-Start-ScheduledTask 'Agent Room dashboard'                   # start
-Unregister-ScheduledTask 'Agent Room dashboard' -Confirm:$false   # remove
+Get-ScheduledTask 'Agent Room*'                                    # status
+Disable-ScheduledTask 'Agent Room dashboard'; Stop-ScheduledTask 'Agent Room dashboard'   # pause
+Enable-ScheduledTask  'Agent Room dashboard'                       # resume (starts within a minute)
+Unregister-ScheduledTask 'Agent Room*' -Confirm:$false             # remove both
 Get-Content $env:USERPROFILE\.local\state\agent-room\ui.log -Wait  # follow the log
 ```
+
+If you also run Agent Room inside WSL, WSL forwards its dashboard to Windows
+`localhost:4400`. Give the Windows one another port before installing the
+service, e.g. `"ui": {"port": 4401}` in
+`%USERPROFILE%\.config\agent-room\registry.json`; otherwise the Windows dashboard
+cannot bind the port.
 
 Re-run the installer with `-Service` after upgrading, or after installing new
 tools, so the tasks pick them up.
