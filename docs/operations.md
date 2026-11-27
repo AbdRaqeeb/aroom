@@ -9,8 +9,7 @@ aroom doctor
 ```
 
 The script clones or updates `~/.local/share/aroom` and then runs the
-`install.sh` inside it. While the repo is private, see the README for the
-token form of the command. From an existing clone, `./install.sh` does the same
+`install.sh` inside it. From an existing clone, `./install.sh` does the same
 install against that checkout.
 
 `install.sh` writes `~/.local/bin/aroom` (a wrapper around a Python 3.10+

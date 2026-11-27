@@ -28,20 +28,6 @@ Install Agent Room as a service:
 curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash -s -- --service
 ```
 
-While the repo is private, fetching the script needs a token too.
-[Create a fine-grained token](https://github.com/settings/personal-access-tokens/new)
-with **Contents: read** on `AbdRaqeeb/aroom`, then:
-
-```bash
-export GITHUB_TOKEN=github_pat_...
-curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw" \
-  https://api.github.com/repos/AbdRaqeeb/aroom/contents/install.sh | bash -s -- --service
-```
-
-(`gh auth login` or an SSH key on GitHub also work; the installer tries
-public HTTPS, `gh`, SSH and `GITHUB_TOKEN` in that order. The token is used for
-the clone only and is never written to disk.)
-
 `--service` does the following:
 
 - installs `agent-room-ui` and `agent-room-supervisor` as systemd **user** units

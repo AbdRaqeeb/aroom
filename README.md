@@ -41,19 +41,6 @@ One command, on Linux or macOS:
 curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash
 ```
 
-While the repo is private, fetch the script through the API with a token that
-has **Contents: read** on this repo. The installer then uses the same token for
-the clone and never stores it:
-
-```bash
-export GITHUB_TOKEN=github_pat_...
-curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw" \
-  https://api.github.com/repos/AbdRaqeeb/aroom/contents/install.sh | bash
-```
-
-If `gh auth login` or a GitHub SSH key is already set up on the machine, the
-installer uses that and no token is needed for the clone.
-
 Then:
 
 ```bash
