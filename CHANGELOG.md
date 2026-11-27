@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.1 — 2026-11-27
+
+- `install.sh --service` now works on macOS: it writes launchd agents for the
+  dashboard and the supervisor (start at login, restart on crash, your current
+  `PATH`, logs in `~/.local/state/agent-room/`) and loads them. On a Mac the
+  dashboard stays open on 127.0.0.1; `--listen` with any other address creates
+  the access token.
+- `install.sh --help` prints the full option list.
+
+
 ## v1.2.0 — 2026-11-27
 
 ### New dashboard

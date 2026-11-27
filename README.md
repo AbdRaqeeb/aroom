@@ -62,9 +62,20 @@ Options go after `bash -s --`:
 
 | Option | Effect |
 | --- | --- |
-| `--service` | Linux: run the dashboard and supervisor as systemd user services that survive logout and reboot (use this on a VPS) |
+| `--service` | Run the dashboard and supervisor in the background. Linux: systemd user services that survive logout and reboot (use this on a VPS). macOS: launchd agents that start at login and restart on crash |
 | `--listen ADDR` | Address the dashboard service binds. The default is `127.0.0.1` |
 | `--ref REF` | Install a branch or tag, e.g. `--ref v1.1.0` |
+
+**Run it in the background on a Mac:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash -s -- --service
+```
+
+The dashboard is then always at http://127.0.0.1:4400. Manage it with
+`launchctl kickstart -k gui/$(id -u)/com.agentroom.ui` (restart) and
+`launchctl bootout gui/$(id -u)/com.agentroom.ui` (stop). Logs are in
+`~/.local/state/agent-room/`.
 
 **Upgrade:** run the same command again, or
 `git -C ~/.local/share/aroom pull --ff-only`.

@@ -57,7 +57,12 @@ systemctl --user stop agent-room-ui.service agent-room-supervisor.service
 
 ## launchd agents (macOS)
 
-macOS has no systemd. Copy the templates in `examples/launchd`, replacing
+`install.sh --service` sets these up for you on macOS. It writes
+`~/Library/LaunchAgents/com.agentroom.ui.plist` and `com.agentroom.supervisor.plist`
+with your current `PATH` (so `claude`, `opencode`, `node` and `pnpm` resolve),
+then loads them. Re-run it after moving tools or changing `--listen`.
+
+To do it by hand instead, copy the templates in `examples/launchd`, replacing
 `__HOME__` with your home directory:
 
 ```bash
