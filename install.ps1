@@ -147,7 +147,12 @@ if ($Service) {
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -MultipleInstances IgnoreNew -StartWhenAvailable
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    # Logon starts it; the every-minute trigger brings it back if the process
+    # dies (Task Scheduler's restart-on-failure only covers failed launches).
+    # MultipleInstances IgnoreNew keeps a running copy from being doubled.
+    $atLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $everyMinute = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $trigger = @($atLogon, $everyMinute)
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     foreach ($t in $tasks) {
         $existing = Get-ScheduledTask -TaskName $t.Name -ErrorAction SilentlyContinue
@@ -160,8 +165,10 @@ if ($Service) {
             -Description "Agent Room (aroom). Re-run install.ps1 -Service to update." -ErrorAction Stop | Out-Null
         Start-ScheduledTask -TaskName $t.Name
     }
-    Say "service:" "'Agent Room dashboard' + 'Agent Room supervisor' in Task Scheduler (dashboard on http://${Listen}:4400)"
-    Say "" "start at logon, restart on failure; logs in $StateDir"
+    $port = & $Python -c "import sys; sys.path.insert(0, r'$Here'); from agentroom import config; print(config.load_registry()['ui'].get('port', 4400))" 2>$null
+    if (-not $port) { $port = 4400 }
+    Say "service:" "'Agent Room dashboard' + 'Agent Room supervisor' in Task Scheduler (dashboard on http://${Listen}:$port)"
+    Say "" "start at logon, come back within a minute if they stop; logs in $StateDir"
     Say "" "stop:    Stop-ScheduledTask 'Agent Room dashboard'"
     Say "" "remove:  Unregister-ScheduledTask 'Agent Room dashboard' -Confirm:`$false"
     $token = & $Launcher token 2>$null
