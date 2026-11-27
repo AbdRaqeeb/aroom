@@ -740,6 +740,8 @@ def cmd_doctor(_args) -> int:
         print(f"{name:<10} {path or 'MISSING'}")
         if name in {"python", "git", "bash"} and not path:
             ok = False
+    titles = "setproctitle" if osutil.has_setproctitle() else "plain (pip install --user setproctitle for named processes)"
+    print(f"{'titles':<10} {titles}")
     reg = project_config.load_registry()
     print(f"registry   {util.REGISTRY} ({len(reg['projects'])} projects)")
     print(f"dashboard  http://{reg['ui'].get('host')}:{reg['ui'].get('port')}")
@@ -953,6 +955,7 @@ def main(argv: list[str] | None = None) -> int:
     if not getattr(args, "command", None):
         parser.print_help()
         return 0
+    osutil.set_title(args.command)
     try:
         return int(args.func(args) or 0)
     except KeyboardInterrupt:

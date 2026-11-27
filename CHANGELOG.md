@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3.3 — 2026-11-27
+
+Named processes, so the dashboard and the supervisor no longer look like two
+copies of Agent Room.
+
+- Every command names its process after itself: `aroom-ui`, `aroom-supervisor`,
+  `aroom-build`, `aroom-verify`, `aroom-<command>`. Before, Activity Monitor and
+  `ps -c` showed both background services as "Python".
+- Uses the optional `setproctitle` package when it is present; Agent Room still
+  runs on the stdlib alone. On Linux without it, the thread name is set instead
+  (seen by `top` and `ps -o comm`).
+- `install.sh` tries to install `setproctitle` into the user site and only
+  notes it if that fails. `aroom doctor` shows whether it is available.
+
+
 ## v1.3.2 — 2026-11-27
 
 Windows `-Service`, tested on a real Windows 11 machine.

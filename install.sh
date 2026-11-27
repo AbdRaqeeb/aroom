@@ -229,6 +229,19 @@ if ! "$LAUNCHER" --version >/dev/null 2>&1; then
     exit 1
 fi
 
+# Optional: setproctitle names the processes (aroom-ui, aroom-supervisor)
+# instead of "Python". Agent Room runs without it, so failures are only noted.
+# It goes into the user site; on a PEP 668 Python (Homebrew, Debian) that needs
+# --break-system-packages, which still leaves the system site-packages alone.
+if "$PYTHON" -c 'import setproctitle' >/dev/null 2>&1; then
+    echo "titles:    setproctitle present"
+elif "$PYTHON" -m pip install --user --quiet --disable-pip-version-check setproctitle >/dev/null 2>&1 ||
+    "$PYTHON" -m pip install --user --quiet --disable-pip-version-check --break-system-packages setproctitle >/dev/null 2>&1; then
+    echo "titles:    installed setproctitle (processes show as aroom-ui, aroom-supervisor)"
+else
+    echo "note:      could not install setproctitle; processes will show as \"Python\" (optional)"
+fi
+
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) echo "note:      $BIN_DIR is not on PATH in this shell yet; open a new shell or source your rc file" ;;

@@ -30,6 +30,48 @@ else:
     DETACH = {"start_new_session": True}
 
 
+# Short names for the long-running commands; everything else is aroom-<cmd>.
+_TITLES = {"ui": "aroom-ui", "supervise": "aroom-supervisor", "_build": "aroom-build", "_verify": "aroom-verify", "_chat": "aroom-chat"}
+
+
+def set_title(command: str) -> None:
+    """Name this process after its subcommand.
+
+    Without this every aroom process shows up as "Python" in Activity Monitor
+    and `ps -c`, so the dashboard and the supervisor look like two copies of
+    the same thing. Uses `setproctitle` when it is installed (optional; the
+    installer tries to add it) and falls back to the Linux thread name, which
+    `top` and `ps -o comm` show. Never raises.
+    """
+    name = _TITLES.get(command, f"aroom-{command.lstrip('_')}")
+    try:
+        import setproctitle  # type: ignore[import-not-found]
+
+        # Name only: macOS shows the first 16 characters of the title as the
+        # process name, so arguments would clip it ("aroom-ui --no-op").
+        setproctitle.setproctitle(name)
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL(None)
+            libc.prctl(15, name.encode()[:15], 0, 0, 0)  # PR_SET_NAME
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def has_setproctitle() -> bool:
+    try:
+        import setproctitle  # type: ignore[import-not-found]  # noqa: F401
+
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def setup() -> None:
     """Process-wide defaults; call before anything prints or spawns."""
     if not IS_WINDOWS:
