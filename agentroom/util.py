@@ -220,15 +220,22 @@ def run(
         merged.update(env)
     if not shell and isinstance(cmd, list):
         cmd = osutil.resolve(cmd)
-    proc = subprocess.run(
-        cmd,
-        cwd=cwd,
-        env=merged,
-        shell=shell,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=cwd,
+            env=merged,
+            shell=shell,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as exc:
+        # A tool that is not installed (claude, gh, lsof...) is a failed
+        # command, not a crash: report it like a shell would.
+        proc = subprocess.CompletedProcess(cmd, 127, "", f"{exc}")
     if check and proc.returncode != 0:
         raise RuntimeError(
             f"command failed ({proc.returncode}): {cmd}\n{proc.stdout[-3000:]}\n{proc.stderr[-3000:]}"

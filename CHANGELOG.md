@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.1 — 2026-11-27
+
+Found by running the installer and a full pipeline on native Windows.
+
+- A command that is not installed (for example `claude` on a machine that only
+  has OpenCode) now returns exit code 127 instead of raising. Before, a missing
+  `claude` made `/api/state` fail, so the dashboard showed no projects.
+- Command output is decoded as UTF-8 with replacement, so an unexpected byte
+  from a tool cannot crash a request.
+
+
 ## v1.3.0 — 2026-11-27
 
 ### Native Windows
