@@ -294,3 +294,15 @@ def append_once(path: str, block: str) -> bool:
 
 def utc_stamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def primary_ip() -> str:
+    """Best guess at this machine's outward-facing address (no packets sent)."""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("10.255.255.255", 1))
+            return sock.getsockname()[0]
+    except OSError:
+        return ""

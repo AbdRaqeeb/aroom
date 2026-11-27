@@ -2,24 +2,20 @@
 
 ## Install
 
-Agent Room runs from a checkout; nothing is published to PyPI or Homebrew. The
-clone can live anywhere — these docs use `~/.local/share/aroom`.
-
 ```bash
-# private repo: SSH key or `gh auth login` required
-gh repo clone AbdRaqeeb/aroom ~/.local/share/aroom
-# or: git clone git@github.com:AbdRaqeeb/aroom.git ~/.local/share/aroom
-
-~/.local/share/aroom/install.sh
-exec zsh                    # bash: exec bash --login
-aroom --version
+curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash
+exec $SHELL -l
 aroom doctor
 ```
 
+The script clones or updates `~/.local/share/aroom` and then runs the
+`install.sh` inside it. While the repo is private, see the README for the
+token form of the command. From an existing clone, `./install.sh` does the same
+install against that checkout.
+
 `install.sh` writes `~/.local/bin/aroom` (a wrapper around a Python 3.10+
 interpreter), adds `~/.local/bin` to `PATH`, and adds `alias ar="aroom"` once
-(the GNU archiver `/usr/bin/ar` is never shadowed). It is safe to re-run after
-moving the clone.
+(the GNU archiver `/usr/bin/ar` is never shadowed). It is safe to re-run.
 
 On macOS the system `python3` may be 3.9; install a newer one with
 `brew install python@3.12`. The installer prefers `python3.13` … `python3.10`
@@ -27,7 +23,10 @@ over `python3`.
 
 ## systemd user services (Linux)
 
-Copy the example units. They call `~/.local/bin/aroom`, so they do not depend on
+`install.sh --service` does all of this for you, including a `PATH` drop-in and
+the access token. For phone and VPS access, see [remote.md](remote.md).
+
+To set it up by hand, copy the example units. They call `~/.local/bin/aroom`, so they do not depend on
 where the checkout lives:
 
 ```bash

@@ -19,7 +19,6 @@ STATE_PATH = os.path.join(util.STATE_DIR, "supervisor.json")
 FALLBACKS = [
     {"runner": "opencode", "model": "opencode-go/deepseek-v4.1-flash"},
     {"runner": "claude", "model": "sonnet"},
-    {"runner": "opencode", "model": "google/gemini-3.5-flash"},
 ]
 
 TRANSIENT = re.compile(

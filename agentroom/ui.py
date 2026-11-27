@@ -8,10 +8,13 @@ import subprocess
 import sys
 import time
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
+from . import auth
 from . import config as project_config
+from . import conflicts, diagnose
 from . import chat, gitops, models, pipeline, preview, runners, sessions, tasks as tasklib, util
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
@@ -98,6 +101,24 @@ def _summary(run: dict, events: int = 6, probe: bool = False) -> dict:
         branch = run.get("branch", "")
         out["worktree_exists"] = bool(repo and worktree and gitops.worktree_exists(repo, worktree))
         out["branch_exists"] = bool(repo and branch and gitops.branch_exists(repo, branch))
+    return out
+
+
+def _maybe_problem(run: dict, blocked: dict) -> bool:
+    return (
+        run.get("state") in {"needs-human", "failed"}
+        or run.get("task") in blocked
+        or _stalled(run)
+    )
+
+
+def _candidate(run: dict) -> dict:
+    """Raw run plus the probes the diagnosis needs."""
+    out = dict(run)
+    summary = _summary(run, events=0, probe=True)
+    for key in ("stalled", "pid_alive", "error_detail", "worktree_exists", "branch_exists", "elapsed_s"):
+        if key in summary:
+            out[key] = summary[key]
     return out
 
 
@@ -234,6 +255,9 @@ def project_state(name: str, repo: str, external: list[dict] | None = None) -> d
         ),
         None,
     )
+    entry["problems"] = diagnose.for_project(
+        name, repo, cfg, [_candidate(r) for r in runs if _maybe_problem(r, entry["blocked"])], entry.get("git")
+    )
     entry["current"] = _summary(current, events=8, probe=True) if current else None
     entry["attention"] = _summary(attention, events=4, probe=True) if attention else None
     return entry
@@ -325,6 +349,8 @@ def start_run(payload: dict) -> dict:
         command.extend(["--max-tasks", str(int(payload["max_tasks"]))])
     if payload.get("mock"):
         command.append("--mock")
+    if payload.get("fresh") and task:
+        command.append("--fresh")
     log_path = os.path.join(directory, "daemon.log")
     with open(log_path, "a", encoding="utf-8") as log:
         log.write(f"\n=== {util.now_iso()} {' '.join(command)} ===\n")
@@ -439,6 +465,109 @@ def track_project(path: str) -> dict:
     return {"project": project, "path": repo}
 
 
+def problem_detail(project: str, task: str, kind: str = "") -> dict:
+    name, repo, cfg = project_config.find_project(project)
+    state = project_state(name, repo, external=[])
+    pid = f"{name}:{task or ('__push__' if kind == 'push-failed' else '__base__')}"
+    problem = next((p for p in state.get("problems", []) if p["id"] == pid), None)
+    if not problem:
+        raise KeyError(pid)
+    run = None
+    if task:
+        raw = util.read_json(os.path.join(pipeline.run_dir(repo, task), "run.json"), None)
+        run = _candidate(raw) if raw else None
+    return diagnose.full(name, repo, cfg, problem, run)
+
+
+def apply_fix(payload: dict) -> dict:
+    project = payload.get("project", "")
+    task = (payload.get("task") or "").strip()
+    action = payload.get("action", "")
+    note = str(payload.get("note") or "").strip()
+    name, repo, cfg = project_config.find_project(project)
+
+    if action == "stash":
+        proc = util.run(["git", "-C", repo, "stash", "push", "-u", "-m", f"aroom: stashed from dashboard {util.now_iso()}"])
+        if proc.returncode != 0:
+            raise SystemExit(proc.stderr or proc.stdout)
+        return {"ok": True, "message": "changes stashed (restore with `git stash pop`)"}
+    if action == "commit-base":
+        message = note or "chore: commit local changes (from agent room)"
+        util.run(["git", "-C", repo, "add", "-A"])
+        proc = util.run(["git", "-C", repo, "commit", "-m", message])
+        if proc.returncode != 0:
+            raise SystemExit((proc.stdout + proc.stderr).strip()[-2000:])
+        return {"ok": True, "message": f"committed: {message}"}
+    if action == "push":
+        result = pipeline.push_if_needed(name, force=True)
+        if result.get("enabled") and not result.get("ok"):
+            raise SystemExit(f"push failed: {result.get('error')}")
+        return {"ok": True, "message": "pushed" if result.get("pushed") else "remote already up to date"}
+    if action == "stop":
+        return {"ok": pipeline.stop(name), "message": "stopping"}
+    if not task:
+        raise SystemExit("task is required")
+    if action == "unblock":
+        tasklib.unmark_blocked(repo, task)
+        return {"ok": True, "message": f"{task} unblocked; the loop can pick it up again"}
+    if action in {"agent-fix", "answer"}:
+        run = util.read_json(os.path.join(pipeline.run_dir(repo, task), "run.json"), None) or {}
+        problem = next((p for p in project_state(name, repo, external=[]).get("problems", []) if p.get("task") == task), {})
+        guidance = diagnose.agent_fix_note(problem, _candidate(run) if run else {}, cfg)
+        if action == "answer" and note:
+            note = "Answer from the human to your question in notes.md:\n" + note
+        full_note = "\n\n".join(x for x in (note, guidance) if x)
+        if run.get("state") in {"needs-human", "failed", "stopped"}:
+            pipeline.requeue_task(name, task, note=full_note)
+            return {"ok": True, "message": f"{task} sent back to the builder"}
+        return dict(start_resume({"project": name, "task": task, "note": full_note}), ok=True, message=f"resuming {task}")
+    if action == "resume":
+        return dict(start_resume({"project": name, "task": task, "note": note}), ok=True, message=f"resuming {task}")
+    if action == "reverify":
+        tasklib.unmark_blocked(repo, task)
+        return dict(start_verify({"project": name, "task": task}), ok=True, message=f"re-verifying {task}")
+    if action == "retry-merge" or action == "merge":
+        run = pipeline.merge_run(name, task, force=True)
+        if run.get("state") != "merged":
+            raise SystemExit(f"merge did not complete: {run.get('step')}\n{run.get('error') or ''}".strip())
+        tasklib.unmark_blocked(repo, task)
+        return {"ok": True, "message": f"{task} merged", "state": run.get("state")}
+    if action == "mark-merged":
+        run = pipeline.mark_merged(name, task)
+        return {"ok": True, "message": f"{task} marked merged", "state": run.get("state")}
+    if action == "clean":
+        pipeline.clean_task(name, task)
+        return {"ok": True, "message": f"{task} worktree and branch removed"}
+    if action == "run-fresh":
+        tasklib.unmark_blocked(repo, task)
+        return dict(start_run({"project": name, "task": task, "fresh": True}), ok=True, message=f"starting {task} from scratch")
+    raise SystemExit(f"unknown action {action}")
+
+
+def conflict_op(payload: dict) -> dict:
+    project = payload.get("project", "")
+    task = (payload.get("task") or "").strip()
+    op = payload.get("op", "")
+    if op == "start":
+        return conflicts.start(project, task)
+    if op == "resolve":
+        return conflicts.resolve(project, task, payload.get("path", ""), payload.get("mode", ""), payload.get("content"))
+    if op == "abort":
+        return conflicts.abort(project, task)
+    if op == "finish":
+        result = conflicts.finish(project, task)
+        then = payload.get("then")
+        if then == "merge":
+            try:
+                result["merge"] = apply_fix({"project": project, "task": task, "action": "retry-merge"})
+            except SystemExit as exc:
+                result["merge_error"] = str(exc)
+        elif then == "verify":
+            result["verify"] = start_verify({"project": project, "task": task})
+        return result
+    raise SystemExit(f"unknown op {op}")
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "agent-room/1"
 
@@ -459,6 +588,101 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, message: str, status: int = 400) -> None:
         self._json({"error": message}, status)
 
+    # -- access control -------------------------------------------------
+
+    def _cookie(self) -> str:
+        jar = SimpleCookie()
+        try:
+            jar.load(self.headers.get("Cookie") or "")
+        except Exception:  # noqa: BLE001
+            return ""
+        morsel = jar.get(auth.COOKIE)
+        return morsel.value if morsel else ""
+
+    def _https(self) -> bool:
+        return (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+
+    def _session_cookie(self, token: str) -> str:
+        parts = [
+            f"{auth.COOKIE}={auth.session_value(token)}",
+            "Path=/",
+            "HttpOnly",
+            "SameSite=Lax",
+            f"Max-Age={auth.COOKIE_MAX_AGE}",
+        ]
+        if self._https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _redirect(self, location: str, cookie: str | None = None) -> None:
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _authorized(self, token: str) -> bool:
+        header = self.headers.get("Authorization") or ""
+        bearer = header[7:].strip() if header.lower().startswith("bearer ") else ""
+        return auth.check(token, cookie=self._cookie(), bearer=bearer)
+
+    def _same_origin(self) -> bool:
+        # SameSite=Lax already keeps the cookie off cross-site POSTs;
+        # this also rejects cross-origin POSTs that carry a bearer token.
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or ""
+        return urlparse(origin).netloc == host
+
+    def _login_page(self, nxt: str = "/", error: str = "", status: int = 200) -> None:
+        safe_next = nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"
+        page = auth.LOGIN_PAGE.replace("__NEXT__", quote(safe_next, safe="/?=&%")).replace(
+            "__ERROR__", f'<p class="err">{error}</p>' if error else ""
+        )
+        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _gate_get(self, parsed, query) -> bool:
+        """Return True when the request may continue."""
+        token = auth.load_token()
+        if not token or parsed.path == "/api/health":
+            return True
+        if parsed.path == "/login":
+            self._login_page((query.get("next") or ["/"])[0])
+            return False
+        link = (query.get("token") or [""])[0]
+        if link and auth.check(token, query=link):
+            rest = {k: v for k, v in query.items() if k != "token"}
+            target = parsed.path + ("?" + urlencode(rest, doseq=True) if rest else "")
+            self._redirect(target, self._session_cookie(token))
+            return False
+        if self._authorized(token):
+            return True
+        if parsed.path.startswith("/api/"):
+            self._error("unauthorized", 401)
+        else:
+            self._redirect("/login?next=" + quote(self.path, safe=""))
+        return False
+
+    def _handle_login(self) -> None:
+        token = auth.load_token()
+        length = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace")) if length else {}
+        given = (form.get("token") or [""])[0].strip()
+        nxt = (form.get("next") or ["/"])[0]
+        if not nxt.startswith("/") or nxt.startswith("//"):
+            nxt = "/"
+        if not token:
+            self._redirect(nxt)
+            return
+        if not auth.check(token, query=given):
+            time.sleep(1)  # slow down guessing
+            self._login_page(nxt, "That token is not right.", 401)
+            return
+        self._redirect(nxt, self._session_cookie(token))
+
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -471,6 +695,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
+        if not self._gate_get(parsed, query):
+            return
         if parsed.path in {"/", "/index.html"}:
             path = os.path.join(ASSETS, "index.html")
             try:
@@ -483,7 +709,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if parsed.path == "/api/state":
-            self._json(build_state())
+            state = build_state()
+            state["auth"] = bool(auth.load_token())
+            self._json(state)
             return
         if parsed.path == "/api/git":
             project = (query.get("project") or [""])[0]
@@ -491,6 +719,35 @@ class Handler(BaseHTTPRequestHandler):
             payload = {"project": name, "git": gitops.detail(repo)}
             payload.update(gitops.inventory(repo))
             self._json(payload)
+            return
+        if parsed.path == "/api/problem":
+            project = (query.get("project") or [""])[0]
+            task = (query.get("task") or [""])[0]
+            kind = (query.get("kind") or [""])[0]
+            try:
+                self._json(problem_detail(project, task, kind))
+            except KeyError:
+                self._error("this problem is already resolved", 404)
+            except SystemExit as exc:
+                self._error(str(exc), 400)
+            return
+        if parsed.path == "/api/conflict":
+            try:
+                self._json(conflicts.status((query.get("project") or [""])[0], (query.get("task") or [""])[0]))
+            except SystemExit as exc:
+                self._error(str(exc), 400)
+            return
+        if parsed.path == "/api/conflict/file":
+            try:
+                self._json(
+                    conflicts.file(
+                        (query.get("project") or [""])[0],
+                        (query.get("task") or [""])[0],
+                        (query.get("path") or [""])[0],
+                    )
+                )
+            except SystemExit as exc:
+                self._error(str(exc), 400)
             return
         if parsed.path == "/api/models":
             self._json(models.list_models())
@@ -533,10 +790,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parsed = urlparse(self.path)
+        if not self._same_origin():
+            self._error("cross-origin request refused", 403)
+            return
+        if parsed.path == "/login":
+            self._handle_login()
+            return
+        token = auth.load_token()
+        if parsed.path == "/logout":
+            self._redirect("/login", f"{auth.COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+            return
+        if not self._authorized(token):
+            self._error("unauthorized", 401)
+            return
         payload = self._body()
         try:
             if parsed.path == "/api/run":
                 self._json(start_run(payload))
+                return
+            if parsed.path == "/api/fix":
+                self._json(apply_fix(payload))
+                return
+            if parsed.path == "/api/conflict":
+                self._json(conflict_op(payload))
                 return
             if parsed.path == "/api/stop":
                 ok = pipeline.stop(payload.get("project", ""))
@@ -611,16 +887,29 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str | None = None, port: int | None = None, open_browser: bool = True) -> None:
+    try:
+        sys.stdout.reconfigure(line_buffering=True)  # visible in service logs
+    except Exception:  # noqa: BLE001
+        pass
     reg = project_config.load_registry()
     host = host or reg["ui"].get("host", "127.0.0.1")
     port = int(port or reg["ui"].get("port", 4400))
+    token = auth.load_token()
+    if not auth.is_loopback(host) and not token:
+        # Never serve start/stop/merge buttons to the network without a lock.
+        token = auth.new_token()
+        print(f"created an access token in {auth.TOKEN_FILE} (show it again with `aroom token`)")
     server = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}"
+    url = f"http://{host if host not in {'0.0.0.0', '::'} else 'localhost'}:{port}"
     print(f"agent room → {url}")
+    if token:
+        print("access     token required (aroom token --link prints a sign-in link)")
+    if not auth.is_loopback(host):
+        print(f"listening  on {host}:{port}; put HTTPS in front (tailscale serve / caddy) before using it over the internet")
     print(f"watching {len(reg['projects'])} project(s); Ctrl+C to stop")
-    if open_browser:
+    if open_browser and auth.is_loopback(host):
         try:
-            webbrowser.open(url)
+            webbrowser.open(url + (f"/?token={token}" if token else ""))
         except Exception:  # noqa: BLE001
             pass
     try:

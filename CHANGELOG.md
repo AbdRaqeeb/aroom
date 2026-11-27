@@ -1,5 +1,77 @@
 # Changelog
 
+## v1.1.0 — 2026-11-26
+
+Install with one command; use the dashboard from your phone.
+
+### Install
+
+- `install.sh` works piped from curl: with no checkout next to it, it clones
+  or updates the repo in `~/.local/share/aroom` and installs from there. It
+  reaches the private repo over public HTTPS, `gh`, an SSH key, or
+  `GITHUB_TOKEN`, in that order. The token is never written to `.git/config`.
+- `--service` installs and starts systemd user units for the dashboard and the
+  supervisor, carries the current `PATH` into them, enables lingering, and
+  creates an access token.
+- `--listen ADDR`, `--ref REF`, plus the `AROOM_HOME`, `AROOM_REPO`, `AROOM_REF`
+  and `AROOM_GIT_URL` environment variables.
+
+### Fixing stuck work from the dashboard
+
+- **Needs you** inbox at the top of the dashboard lists everything waiting on a
+  person, across all projects: merge conflicts, verifier rejections, failing
+  checks, crashes, quota limits, blocked tasks, stalled runs, an uncommitted
+  main checkout, and failed pushes. Each item states what happened, why, and
+  what to do, plus the actions that fit that case. It no longer says only
+  "needs a human".
+- **Fix panel** shows everything recorded for the problem: the full block
+  reason (no longer cut at 500 characters), verifier findings and `verify.md`,
+  failing check logs, the agent's own notes or question, conflicted files,
+  builder/verifier log errors, recent events, and run facts. Every section can
+  be copied.
+- **Conflict resolver**: merges the base into the task's worktree (the main
+  checkout is never touched), then for each file you keep the task's version,
+  keep the base's version, or edit the combined file. It refuses to finish while
+  conflict markers remain. **Finish & merge** lands the task;
+  **finish & re-verify** checks it first; **abort** undoes the merge.
+- One-tap fixes: answer the agent's question, send the task back with guidance
+  (conflict and failing-check context is added for you), resume, re-verify,
+  retry merge, unblock, start over, discard work, stash or commit the main
+  checkout, and retry the push.
+- Cards show their open problems with a **fix** button. Blocked tasks in the
+  task list show their full reason and a **fix** button too.
+- New endpoints: `GET /api/problem`, `POST /api/fix`, `GET|POST /api/conflict`,
+  `GET /api/conflict/file`.
+
+### Remote access
+
+- Dashboard access token, stored in `~/.config/agent-room/ui-token` (0600) or
+  `AROOM_TOKEN`. When set, the dashboard needs a sign-in (session cookie lasting
+  90 days), a `Bearer` header, or a one-time `?token=` link.
+  Cross-origin POSTs are refused.
+- `aroom ui --host 0.0.0.0` creates a token if none exists. It never serves an
+  open dashboard off loopback.
+- `aroom token [--new | --create | --link [--url URL] | --off]`.
+- Phone layout: single column, larger tap targets, bottom-sheet modals,
+  safe-area insets, no iOS zoom on inputs, home-screen app meta tags, and a
+  sign-out button.
+- Preview links that point at `localhost` are rewritten to the dashboard's host
+  when the dashboard is opened from another device.
+- New guide: `docs/remote.md` (VPS, Tailscale, Caddy).
+
+## v1.0.2 — 2026-11-26
+
+Quota failures no longer block the queue.
+
+- Model-unavailable, rate-limit and weekly/5-hour quota errors are treated as
+  transient in `auto_requeue`: they rotate models or wait 15 minutes instead of
+  spending the task's `requeue_attempts` and blocking it.
+- A verifier that exits nonzero without writing `verify.md` is now an error
+  (transient handling applies), not a FAIL verdict.
+- Rotation clears `retry_after`, so a task starts immediately on the next model.
+- Dropped `google/gemini-3.5-flash` from the rotation (provider has no route);
+  fallbacks are now DeepSeek V4.1 Flash → Claude Sonnet → wait.
+
 ## v1.0.1 — 2026-11-26
 
 Install and recovery fixes.

@@ -683,6 +683,38 @@ def cmd_ui(args) -> int:
     return 0
 
 
+def cmd_token(args) -> int:
+    from . import auth
+
+    if args.off:
+        if os.environ.get("AROOM_TOKEN"):
+            print("AROOM_TOKEN is set in the environment; unset it to turn the token off")
+            return 1
+        removed = auth.clear_token()
+        print("token removed; the dashboard is open again (loopback only)" if removed else "no token set")
+        return 0
+    token = auth.new_token() if args.new else auth.load_token()
+    if not token:
+        if not args.create:
+            print("no token set. Create one with: aroom token --new")
+            return 1
+        token = auth.new_token()
+    if args.new:
+        print("new token written; every signed-in device must sign in again", file=sys.stderr)
+    if args.link or args.url:
+        reg = project_config.load_registry()
+        base = (args.url or "").rstrip("/")
+        if not base:
+            host = reg["ui"].get("host", "127.0.0.1")
+            if host in {"0.0.0.0", "::"}:
+                host = util.primary_ip() or "localhost"
+            base = f"http://{host}:{reg['ui'].get('port', 4400)}"
+        print(f"{base}/?token={token}")
+    else:
+        print(token)
+    return 0
+
+
 def cmd_doctor(_args) -> int:
     checks = [
         ("python", sys.executable),
@@ -699,6 +731,9 @@ def cmd_doctor(_args) -> int:
     reg = project_config.load_registry()
     print(f"registry   {util.REGISTRY} ({len(reg['projects'])} projects)")
     print(f"dashboard  http://{reg['ui'].get('host')}:{reg['ui'].get('port')}")
+    from . import auth
+
+    print(f"ui token   {'set' if auth.load_token() else 'none (dashboard must stay on 127.0.0.1)'}")
     for name, path in sorted(reg["projects"].items()):
         repo = util.expand(path)
         if not os.path.isdir(repo):
@@ -886,6 +921,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("project", nargs="?")
     p.add_argument("task")
     p.set_defaults(func=cmd_unblock)
+
+    p = sub.add_parser("token", help="show or rotate the dashboard access token")
+    p.add_argument("--new", action="store_true", help="generate a new token (signs out every device)")
+    p.add_argument("--create", action="store_true", help="create a token if none exists")
+    p.add_argument("--link", action="store_true", help="print a one-tap sign-in link")
+    p.add_argument("--url", help="public base URL for the link, e.g. https://aroom.example.com")
+    p.add_argument("--off", action="store_true", help="delete the token (dashboard must then stay on 127.0.0.1)")
+    p.set_defaults(func=cmd_token)
 
     p = sub.add_parser("doctor", help="check the environment")
     p.set_defaults(func=cmd_doctor)

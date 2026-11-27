@@ -151,6 +151,7 @@ def fail_build(repo: str, run: dict, reason: str) -> None:
                     "error": reason,
                     "verdict": "FAIL",
                     "finished": None,
+                    "retry_after": None,
                     "updated": util.now_iso(),
                 }
             )
@@ -218,6 +219,7 @@ def fail_verify(repo: str, run: dict, reason: str) -> None:
                     "step": f"awaiting verifier ({candidate['model']})",
                     "error": reason,
                     "finished": None,
+                    "retry_after": None,
                     "updated": util.now_iso(),
                 }
             )
@@ -403,6 +405,19 @@ def auto_requeue(
     for task, run in sorted(runs.items(), key=lambda item: item[1].get("updated") or ""):
         state = run.get("state")
         if state not in {"needs-human", "failed"} or task in blocked_now:
+            continue
+        # Quota, rate-limit and model-availability failures are not task
+        # failures. Rotate/wait instead of spending the task's requeue budget,
+        # otherwise a bad model run blocks the whole queue.
+        reason = str(run.get("error") or run.get("issues") or "")
+        if transient(reason):
+            if "verifier" in str(run.get("step") or "").lower() or "verifier exited" in reason:
+                fail_verify(repo, run, reason)
+            else:
+                fail_build(repo, run, reason)
+            touched += 1
+            continue
+        if not retry_ready(run):
             continue
         attempts = int(run.get("requeue_count") or 0)
         if attempts >= limit:

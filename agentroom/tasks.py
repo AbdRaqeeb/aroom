@@ -235,7 +235,7 @@ def blocked_ids(repo: str) -> set[str]:
 
 def mark_blocked(repo: str, task_id: str, reason: str) -> None:
     data = load_blocked(repo)
-    data[task_id] = {"reason": reason[:500], "at": util.now_iso()}
+    data[task_id] = {"reason": reason[:6000], "at": util.now_iso()}
     util.write_json(blocked_path(repo), data)
 
 

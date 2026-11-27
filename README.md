@@ -9,7 +9,7 @@ The dashboard shows every project and every run in one place.
 No server, no database, no agent framework. State is git branches plus JSON/JSONL
 files under each repo's `.agent/`.
 
-**v1.0.1** · Python stdlib · Claude Code, OpenCode, or a deterministic mock runner.
+**v1.0.2** · Python stdlib · Claude Code, OpenCode, or a deterministic mock runner.
 
 ## Requirements
 
@@ -28,50 +28,74 @@ when `python3` itself is too old.
 | --- | --- |
 | [docs/configuration.md](docs/configuration.md) | Every `.agent/config.json` key, adapters, roles, limits, push, preview |
 | [docs/architecture.md](docs/architecture.md) | Modules, run state machine, async lanes, locks, merge and push flow |
+| [docs/remote.md](docs/remote.md) | VPS install, phone access (Tailscale / Caddy), access token |
 | [docs/operations.md](docs/operations.md) | systemd/launchd services, logs, reboot recovery, backups, upgrades |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | UI/loop failures, stuck tasks, conflicts, push and quota errors |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ## Install
 
-Agent Room runs from a checkout of this repo. The installer only links a
-launcher and shell integration, so the clone can live anywhere; the examples use
-`~/.local/share/aroom`.
-
-**1. Clone the repo** (it is private, so use SSH or `gh`):
+One command, on Linux or macOS:
 
 ```bash
-gh repo clone AbdRaqeeb/aroom ~/.local/share/aroom
-# or, with an SSH key:
-git clone git@github.com:AbdRaqeeb/aroom.git ~/.local/share/aroom
-# or HTTPS with a personal access token when prompted for a password:
-git clone https://github.com/AbdRaqeeb/aroom.git ~/.local/share/aroom
+curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash
 ```
 
-**2. Install the launcher:**
+While the repo is private, fetch the script through the API with a token that
+has **Contents: read** on this repo. The installer then uses the same token for
+the clone and never stores it:
 
 ```bash
-~/.local/share/aroom/install.sh
-exec zsh                    # bash: exec bash --login
+export GITHUB_TOKEN=github_pat_...
+curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.raw" \
+  https://api.github.com/repos/AbdRaqeeb/aroom/contents/install.sh | bash
+```
+
+If `gh auth login` or a GitHub SSH key is already set up on the machine, the
+installer uses that and no token is needed for the clone.
+
+Then:
+
+```bash
+exec $SHELL -l
 aroom --version
 aroom doctor
 ```
 
-`install.sh` is safe to re-run. It:
+The installer:
 
+- clones the repo into `~/.local/share/aroom` (`AROOM_HOME` changes this), or
+  updates it if it is already there
 - picks a Python 3.10+ interpreter (including Homebrew `python3.12` when the
-  macOS system `python3` is 3.9) and writes a launcher that uses it
-- puts `aroom` in `~/.local/bin`
+  macOS system `python3` is 3.9) and writes `~/.local/bin/aroom`
 - adds `~/.local/bin` to `PATH` and `alias ar="aroom"` to your shell rc, once
   (`/usr/bin/ar` is the GNU archiver, so it is never shadowed)
 
-If you move the clone, run its `install.sh` again to repoint the launcher.
+Options go after `bash -s --`:
 
-**Upgrade:**
+| Option | Effect |
+| --- | --- |
+| `--service` | Linux: run the dashboard and supervisor as systemd user services that survive logout and reboot (use this on a VPS) |
+| `--listen ADDR` | Address the dashboard service binds. The default is `127.0.0.1` |
+| `--ref REF` | Install a branch or tag, e.g. `--ref v1.1.0` |
+
+**Upgrade:** run the same command again, or
+`git -C ~/.local/share/aroom pull --ff-only`.
+
+**From a clone:** `./install.sh` works the same way and links the launcher to
+that checkout.
+
+### On a VPS, used from your phone
 
 ```bash
-git -C ~/.local/share/aroom pull --ff-only
+curl -fsSL https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.sh | bash -s -- --service
+sudo tailscale serve --bg 4400          # HTTPS on your tailnet, no open ports
+aroom token --link --url https://<vps>.<tailnet>.ts.net
 ```
+
+Open the link on the phone and add it to the home screen.
+[docs/remote.md](docs/remote.md) covers Tailscale, Caddy with a domain, preview
+links, and running the service.
 
 ## Quick start
 
@@ -95,6 +119,9 @@ git add .agent .gitignore && git commit -m "chore: add agent room config"
 `aroom ui` serves one page for **every registered project**, wherever it lives.
 It polls each repo's `.agent/runs/*/run.json` and shows:
 
+- a **needs you** inbox: every stuck task across projects, with the reason in
+  plain words, the full evidence, and buttons that fix it (including a merge
+  conflict resolver that runs in the task's worktree)
 - project cards with the current task, state, step, elapsed time, cost and checks
 - the event stream (tool calls from Claude Code / OpenCode)
 - passed / needs-human / failed runs that need a merge or a look
@@ -106,8 +133,10 @@ It polls each repo's `.agent/runs/*/run.json` and shows:
 
 Deep links work: `http://127.0.0.1:4400/?project=aworin&task=M1.9`.
 
-The UI can start and stop runs, but it binds `127.0.0.1` by default. Do not
-expose it publicly without a tunnel.
+The UI can start, stop and merge runs. It binds `127.0.0.1` by default. Once
+an access token exists (`aroom token --new`, or automatically with
+`--host 0.0.0.0` or `--service`), every request must sign in. To use it from
+another device, see [docs/remote.md](docs/remote.md).
 
 ## Switching runners and models
 

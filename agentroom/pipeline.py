@@ -804,6 +804,11 @@ def run_task(
                         f"verifier exited {result['returncode']}"
                         + (f": {detail}" if detail else ""),
                     )
+                    if not os.path.isfile(os.path.join(directory, "verify.md")):
+                        raise RuntimeError(
+                            f"verifier exited {result['returncode']}"
+                            + (f": {detail}" if detail else "")
+                        )
                 if budget_exceeded(cfg, run):
                     raise RuntimeError(f"run budget exceeded (${run.get('cost_usd'):.2f})")
                 verifier_committed = commit_verifier_changes(worktree, task)
@@ -1298,7 +1303,18 @@ def verify_run(project: str, task_id: str, *, overrides: dict | None = None) -> 
             cfg,
         )
         if result["returncode"] != 0:
-            runners.emit(directory, run, "verifier", "warn", f"verifier exited {result['returncode']}")
+            detail = runners.summarize_error(os.path.join(directory, "verifier.log"))
+            runners.emit(
+                directory,
+                run,
+                "verifier",
+                "warn",
+                f"verifier exited {result['returncode']}" + (f": {detail}" if detail else ""),
+            )
+            if not os.path.isfile(os.path.join(directory, "verify.md")):
+                raise RuntimeError(
+                    f"verifier exited {result['returncode']}" + (f": {detail}" if detail else "")
+                )
         verifier_committed = commit_verifier_changes(worktree, task)
         verdict, issues = parse_verify(os.path.join(directory, "verify.md"))
         if verdict == "PASS" and verifier_committed:

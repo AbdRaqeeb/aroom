@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#090b0f" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="aroom" />
 <title>agent room</title>
 <style>
   :root {
@@ -412,6 +417,87 @@
     position: sticky; bottom: 0; background: #0f131a; z-index: 1;
   }
   .err { color: var(--red); font-size: 11.5px; margin-top: 8px; min-height: 15px; }
+
+  /* ---- needs-you inbox / fix panel / conflict resolver ---- */
+  .inbox { border: 1px solid #4a3a17; border-radius: 16px; background: rgba(251,191,36,.035); margin-bottom: 18px; overflow: hidden; }
+  .inbox-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #3a2f16; }
+  .inbox-head h2 { margin: 0; font-size: 13px; letter-spacing: .6px; text-transform: uppercase; color: #ffe08a; font-weight: 600; }
+  .inbox-head .count { font-family: var(--mono); font-size: 12px; color: var(--amber); }
+  .inbox-head .grow { flex: 1; }
+  .prob { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; padding: 14px 16px; border-top: 1px solid var(--line-soft); }
+  .prob:first-of-type { border-top: 0; }
+  .prob-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .prob-where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .prob-head { font-size: 14px; font-weight: 600; color: var(--text); grid-column: 1 / -1; line-height: 1.35; }
+  .prob-sum { font-size: 12.5px; color: #c3cada; line-height: 1.5; grid-column: 1; }
+  .prob-ex { grid-column: 1 / -1; margin: 2px 0 0; padding: 9px 11px; font-size: 11.5px; max-height: 7.5em; overflow: hidden; position: relative; }
+  .prob-q { grid-column: 1 / -1; border-left: 3px solid var(--cyan); padding: 6px 10px; background: rgba(34,211,238,.05); font-size: 12.5px; white-space: pre-wrap; color: #d6f6fb; border-radius: 0 6px 6px 0; }
+  .prob-warn { grid-column: 1 / -1; font-size: 11.5px; color: var(--amber); }
+  .prob-acts { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .kind { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .kind.merge-conflict, .kind.integration-failed, .kind.merge-hook { color: #ffb38a; border-color: #5a3420; background: rgba(255,140,80,.06); }
+  .kind.dirty-base, .kind.blocked, .kind.stalled, .kind.stopped { color: #ffe08a; border-color: #4a3a17; }
+  .kind.verification-failed, .kind.checks-failed, .kind.build-failed, .kind.needs-human, .kind.budget { color: #ffb1b1; border-color: #4b2429; background: rgba(248,113,113,.05); }
+  .kind.quota, .kind.push-failed { color: #b9ccff; border-color: #2b3a5e; }
+  .inbox-more { padding: 10px 16px; border-top: 1px solid var(--line-soft); }
+  .card-probs { display: flex; flex-direction: column; gap: 6px; }
+  .card-prob { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; border: 1px solid #4a3a17; background: rgba(251,191,36,.05); font-size: 12px; min-width: 0; }
+  .card-prob .cp-text { flex: 1; min-width: 0; color: #ffe4a3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-prob.merge-conflict { border-color: #5a3420; background: rgba(255,140,80,.06); }
+  .callout { border: 1px solid #234a33; background: rgba(74,222,128,.05); color: #c9f7da; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin: 12px 0; }
+  .callout b { color: #eafff2; }
+  .fix-acts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .fix-note { width: 100%; min-height: 70px; resize: vertical; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: #090c11; color: var(--text); font: inherit; font-size: 13px; outline: none; }
+  .fix-note:focus { border-color: #3b4d73; }
+  details.sec { border: 1px solid var(--line); border-radius: 10px; margin-top: 10px; background: #0c1016; }
+  details.sec > summary { cursor: pointer; padding: 10px 12px; font-size: 12.5px; color: var(--text); font-weight: 550; list-style: none; display: flex; gap: 8px; align-items: center; }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec > summary::before { content: "▸"; color: var(--muted-2); transition: transform .15s; }
+  details.sec[open] > summary::before { transform: rotate(90deg); }
+  details.sec > summary .copy { margin-left: auto; }
+  details.sec > .sec-body { padding: 0 12px 12px; }
+  details.sec pre { max-height: 50vh; overflow: auto; }
+  details.sec .prose { white-space: pre-wrap; font-size: 13px; line-height: 1.6; color: #c9d1e0; }
+  .modal-card.full { width: min(1400px, calc(100vw - 24px)); height: min(94vh, 1000px); display: flex; flex-direction: column; }
+  .modal-card.full.short { height: auto; }
+  .cf-layout { display: grid; grid-template-columns: 260px 1fr; gap: 14px; flex: 1; min-height: 0; margin-top: 10px; }
+  .cf-files { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: #0c1016; }
+  .cf-file { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 9px 11px; border: 0; border-bottom: 1px solid var(--line-soft); background: none; color: var(--text); font-family: var(--mono); font-size: 11.5px; cursor: pointer; }
+  .cf-file:hover { background: var(--panel-2); }
+  .cf-file.on { background: #172036; }
+  .cf-file .st { flex: none; }
+  .cf-file .p { overflow-wrap: anywhere; }
+  .cf-pane { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+  .cf-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .cf-tab { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; font-size: 12px; }
+  .cf-tab.on { color: var(--text); background: var(--panel-2); border-color: #35405a; }
+  .cf-edit { flex: 1; min-height: 240px; width: 100%; resize: none; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: #090c11; color: #dfe6f3; font-family: var(--mono); font-size: 12px; line-height: 1.55; tab-size: 4; outline: none; white-space: pre; overflow: auto; }
+  .cf-view { flex: 1; min-height: 240px; overflow: auto; margin: 0; }
+  .cf-view .ln { display: block; min-height: 1.55em; }
+  .cf-view .mk { color: #ffb38a; background: rgba(255,140,80,.08); display: block; }
+  .cf-view .ours { background: rgba(138,180,255,.07); display: block; }
+  .cf-view .theirs { background: rgba(74,222,128,.06); display: block; }
+  .cf-legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+  .cf-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .cf-legend .l-ours::before { background: #3f6fd8; }
+  .cf-legend .l-theirs::before { background: #2f9e5c; }
+  .cf-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .cf-intro { font-size: 13px; color: #c9d1e0; line-height: 1.6; margin-top: 14px; }
+  .cf-intro p { margin: 0 0 8px; color: #c9d1e0; font-size: 13px; }
+  .cf-intro ol { margin: 8px 0; padding-left: 20px; }
+  @media (max-width: 720px) {
+    .prob { padding: 12px; grid-template-columns: 1fr; }
+    .prob-acts .btn { flex: 1 1 auto; justify-content: center; }
+    .inbox-head .meta { display: none; }
+    .modal-card.full { height: auto; max-height: 94dvh; display: block; overflow: auto; }
+    #cfBody { display: block !important; }
+    .cf-layout { display: block; }
+    .cf-files { max-height: 120px; margin-bottom: 10px; }
+    .cf-pane { gap: 8px; }
+    .cf-edit, .cf-view { min-height: 0; max-height: 50dvh; }
+    .cf-edit { height: 50dvh; }
+    .cf-bar .btn { flex: 1 1 auto; justify-content: center; }
+  }
   #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 7px; }
   .toast {
     padding: 9px 12px; border-radius: 9px; background: #151b25; border: 1px solid var(--line);
@@ -421,12 +507,55 @@
   .toast.bad { border-color: #4b2429; color: #ffc2c2; }
   @keyframes slidein { from { transform: translateY(6px); opacity: 0; } }
   @media (max-width: 720px) {
-    .top { padding: 14px 16px; gap: 12px; }
-    .stats { order: 3; width: 100%; }
-    main { padding: 14px 16px 50px; }
-    .filters { padding: 12px 16px 2px; }
-    .grid { grid-template-columns: 1fr; }
+    .top {
+      padding: calc(10px + env(safe-area-inset-top)) 14px 10px; gap: 10px;
+      padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right));
+    }
+    .brand p { display: none; }
+    .mark { width: 32px; height: 32px; }
+    .stats { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .stats::-webkit-scrollbar { display: none; }
+    .stat { flex: none; }
+    main { padding: 12px 10px calc(50px + env(safe-area-inset-bottom)); }
+    .filters { padding: 10px 12px 2px; flex-wrap: nowrap; overflow-x: auto; }
+    .filter { flex: none; padding: 8px 12px; }
+    html, body { overflow-x: hidden; }
+    .grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .card, .card > * { min-width: 0; }
+    .gitrow { flex-wrap: wrap; }
+    .card { padding: 14px; border-radius: 14px; gap: 11px; min-height: 0; height: auto !important; }
+    .card:hover { transform: none; box-shadow: none; }
+    .pname { font-size: 16px; }
+    .ppath { overflow-wrap: anywhere; }
+    .btn { min-height: 38px; padding: 8px 12px; }
+    .btn.small { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+    .foot { gap: 6px; }
+    .models { grid-template-columns: 1fr; gap: 6px; }
+    .model { flex-direction: row; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .appbar { flex-wrap: wrap; }
+    .appbar a { flex-basis: 100%; }
+    .nextrow .nt, .qname, .lane .lstep, .gitrow .gsubj { white-space: normal; }
     .drawer { width: 100vw; }
+    .drawer-head { padding: calc(14px + env(safe-area-inset-top)) 14px 10px; }
+    .drawer-body { padding: 16px 14px 40px; }
+    .drawer-foot { flex-wrap: wrap; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    .drawer-foot .facts { width: 100%; }
+    .kv { grid-template-columns: 1fr; gap: 2px; }
+    .kv dd { margin-bottom: 8px; }
+    .ev { flex-wrap: wrap; gap: 4px 10px; }
+    .ev .txt { flex-basis: 100%; }
+    .model-row { grid-template-columns: 1fr; gap: 4px; margin-bottom: 14px; }
+    .modal.on { display: block; }
+    .modal-card, .modal-card.wide, .modal-card.full {
+      position: absolute; left: 0; right: 0; bottom: 0; width: auto !important;
+      max-height: 92dvh; border-radius: 16px 16px 0 0;
+      padding: 18px 14px calc(14px + env(safe-area-inset-bottom));
+    }
+    .chat-card { height: 100dvh; }
+    .chat-msg { max-width: 94%; }
+    /* 16px stops iOS Safari from zooming into focused fields */
+    input, select, textarea, .modal-card input, .modal-card select, .chat-input textarea { font-size: 16px !important; }
+    #toasts { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
@@ -443,6 +572,9 @@
   <div class="actions">
     <button class="btn" id="openAdd">+ project</button>
     <button class="btn ghost" id="refresh" title="Refresh now">↻</button>
+    <form method="post" action="/logout" id="logoutForm" style="display:none;margin:0">
+      <button class="btn ghost" type="submit" title="Sign out of this device">sign out</button>
+    </form>
   </div>
 </header>
 
@@ -454,6 +586,7 @@
 </nav>
 
 <main>
+  <div id="inbox"></div>
   <div id="external"></div>
   <div class="grid" id="grid"></div>
   <p class="hint">polling every 2s · run files live in each repo under <span class="mono">.agent/runs/</span></p>
@@ -582,6 +715,22 @@
   </div>
 </div>
 
+<div class="modal" id="fixModal">
+  <div class="modal-card wide">
+    <button class="btn small ghost modal-x" data-close="fixModal">close</button>
+    <div id="fixBody"><div class="meta">loading…</div></div>
+  </div>
+</div>
+
+<div class="modal" id="conflictModal">
+  <div class="modal-card full">
+    <button class="btn small ghost modal-x" data-close="conflictModal">close</button>
+    <h3 id="cfTitle">resolve conflicts</h3>
+    <p id="cfSub" class="mono" style="color:var(--muted);margin-bottom:0"></p>
+    <div id="cfBody" style="display:flex;flex-direction:column;flex:1;min-height:0"></div>
+  </div>
+</div>
+
 <div id="toasts"></div>
 
 <script>
@@ -647,6 +796,10 @@ function toast(msg, bad) {
 }
 async function api(path, opts) {
   const res = await fetch(path, opts);
+  if (res.status === 401) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+    throw new Error('signed out');
+  }
   let body = {};
   try { body = await res.json(); } catch (e) {}
   if (!res.ok) throw new Error(body.error || res.statusText || 'request failed');
@@ -683,13 +836,28 @@ function modelHint(p) {
     </div>`;
   }).join('')}</div>`;
 }
+// Preview URLs are configured as localhost:<port>. Opened from a phone the
+// dashboard host is the VPS, so point those links at the same host instead.
+function hostUrl(u) {
+  if (!u) return u;
+  const here = location.hostname;
+  if (['localhost', '127.0.0.1', '::1', '[::1]'].includes(here)) return u;
+  try {
+    const parsed = new URL(u);
+    if (['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(parsed.hostname)) {
+      parsed.hostname = here;
+      return parsed.toString();
+    }
+  } catch (e) {}
+  return u;
+}
 function previewBlock(p) {
   const pv = p.preview;
   if (!pv || !pv.configured) return '';
-  const url = pv.url || '';
+  const url = hostUrl(pv.url || '');
   if (pv.running) {
     const services = (pv.services || []).map(s =>
-      `<a class="svc ${s.open ? 'on' : ''}" href="${esc(s.url)}" target="_blank" rel="noopener"><span class="dot"></span>${esc(s.name)}</a>`
+      `<a class="svc ${s.open ? 'on' : ''}" href="${esc(hostUrl(s.url))}" target="_blank" rel="noopener"><span class="dot"></span>${esc(s.name)}</a>`
     ).join('');
     return `<div class="appbar">
       <a href="${esc(url)}" target="_blank" rel="noopener"><b>open app ↗</b><span class="url">${esc(url)}</span></a>
@@ -731,6 +899,7 @@ function isRunning(p) {
   return !!(p.current && ACTIVE.has(p.current.state)) || !!(p.loop && p.loop.alive);
 }
 function needsAttention(p) {
+  if ((p.problems || []).length) return true;
   if (isRunning(p)) return false;
   return !!(p.attention && ['passed','needs-human','failed'].includes(p.attention.state));
 }
@@ -908,8 +1077,9 @@ function card(p) {
     ${run && !showBanner ? runBlock(p, run) : ''}
     ${run ? queueHtml(p, run.task) : ''}
     ${!run && p.loop && p.loop.alive ? queueHtml(p, '') : ''}
-    ${showBanner ? bannerFor(p) : ''}
-    ${dirty ? `<div class="banner amber">uncommitted changes · commit before running</div>` : ''}
+    ${cardProblems(p)}
+    ${showBanner && !(p.problems || []).some(x => x.task === p.attention?.task) ? bannerFor(p) : ''}
+    ${dirty && !(p.problems || []).some(x => x.kind === 'dirty-base') ? `<div class="banner amber">uncommitted changes · commit before running</div>` : ''}
     ${!run && p.loop && p.loop.alive ? `<div class="banner pass">loop running · between tasks</div>` : ''}
     ${!run ? nextRows(p, 3, dirty) : ''}
     <div class="foot">
@@ -925,9 +1095,339 @@ function card(p) {
   </article>`;
 }
 
+
+// ---------------------------------------------------------------------------
+// Needs-you inbox, fix panel, conflict resolver
+// ---------------------------------------------------------------------------
+const KIND_LABEL = {
+  'merge-conflict': 'merge conflict', 'integration-failed': 'integration', 'merge-hook': 'hook rejected',
+  'dirty-base': 'uncommitted', 'verification-failed': 'verifier failed', 'checks-failed': 'checks failed',
+  'build-failed': 'crashed', 'needs-human': 'needs decision', 'quota': 'quota', 'budget': 'budget',
+  'blocked': 'blocked', 'stalled': 'stalled', 'stopped': 'stopped', 'push-failed': 'push failed',
+};
+const ACTION_LABEL = {
+  resolve: 'Resolve conflicts', 'agent-fix': 'Send back to agent', answer: 'Answer the agent',
+  'retry-merge': 'Retry merge', 'mark-merged': 'Mark merged', merge: 'Merge', resume: 'Resume',
+  reverify: 'Re-verify', unblock: 'Unblock', 'run-fresh': 'Start over', clean: 'Discard work',
+  stash: 'Stash changes', 'commit-base': 'Commit changes', push: 'Retry push', stop: 'Stop', open: 'Open run',
+};
+const NEEDS_NOTE = new Set(['answer', 'commit-base']);
+const CONFIRM = {
+  clean: 'Delete the worktree and branch for this task? The agent\'s work on it is lost.',
+  'run-fresh': 'Discard the current branch and start this task again from scratch?',
+  stash: 'Stash all uncommitted changes in the main checkout? (restore later with `git stash pop`)',
+  'mark-merged': 'Only use this if you already committed the merge into the base by hand. Mark merged?',
+};
+S.inboxAll = false;
+
+function allProblems() {
+  return (S.state?.projects || []).flatMap(p => p.problems || []);
+}
+function fxAttrs(p, action) {
+  return `data-fx="${esc(action)}" data-project="${esc(p.project)}" data-task="${esc(p.task || '')}" data-kind="${esc(p.kind)}"`;
+}
+function problemRow(p, inDrawer) {
+  const acts = (p.actions || []).filter(a => a !== 'open' || !inDrawer);
+  const primary = acts[0];
+  const rest = acts.slice(1, 3);
+  const where = [p.project, p.task].filter(Boolean).join(' · ');
+  return `<div class="prob">
+    <div class="prob-top">
+      <span class="kind ${esc(p.kind)}">${esc(KIND_LABEL[p.kind] || p.kind)}</span>
+      <span class="prob-where">${esc(where)}${p.title ? ' — ' + esc(p.title) : ''}</span>
+      ${p.since ? `<span class="prob-where" style="color:var(--muted-2)">${esc(ago(p.since))}</span>` : ''}
+    </div>
+    <div class="prob-head">${esc(p.headline || '')}</div>
+    <div class="prob-sum">${esc(p.summary || '')}</div>
+    ${p.question ? `<div class="prob-q"><b>The agent asks:</b>\n${esc(p.question)}</div>` : ''}
+    ${p.excerpt && !p.question ? `<pre class="prob-ex">${esc(p.excerpt)}</pre>` : ''}
+    ${p.warning ? `<div class="prob-warn">⚠ ${esc(p.warning)}</div>` : ''}
+    <div class="prob-acts">
+      ${primary ? `<button class="btn small primary" ${fxAttrs(p, primary)}>${esc(ACTION_LABEL[primary] || primary)}</button>` : ''}
+      ${rest.map(a => `<button class="btn small" ${fxAttrs(p, a)}>${esc(ACTION_LABEL[a] || a)}</button>`).join('')}
+      <button class="btn small ghost" ${fxAttrs(p, 'fix-open')}>full details & all options</button>
+    </div>
+  </div>`;
+}
+function renderInbox() {
+  const list = allProblems();
+  if (!list.length) { $('#inbox').innerHTML = ''; return; }
+  const shown = S.inboxAll ? list : list.slice(0, 4);
+  $('#inbox').innerHTML = `<section class="inbox">
+    <div class="inbox-head"><h2>needs you</h2><span class="count">${list.length}</span><span class="grow"></span>
+      <span class="meta">work is waiting on these; everything else keeps running</span></div>
+    ${shown.map(p => problemRow(p)).join('')}
+    ${list.length > 4 ? `<div class="inbox-more"><button class="btn small ghost" data-fx="inbox-toggle">${S.inboxAll ? 'show fewer' : `show all ${list.length}`}</button></div>` : ''}
+  </section>`;
+}
+function cardProblems(p) {
+  const list = p.problems || [];
+  if (!list.length) return '';
+  const top = list.slice(0, 2);
+  return `<div class="card-probs">${top.map(x => `
+    <div class="card-prob ${esc(x.kind)}">
+      <span class="kind ${esc(x.kind)}">${esc(KIND_LABEL[x.kind] || x.kind)}</span>
+      <span class="cp-text" title="${esc(x.headline)}">${x.task ? `<span class="mono">${esc(x.task)}</span> · ` : ''}${esc(x.headline)}</span>
+      <button class="btn small primary" ${fxAttrs(x, 'fix-open')}>fix</button>
+    </div>`).join('')}
+    ${list.length > 2 ? `<div class="meta">+${list.length - 2} more in “needs you” above</div>` : ''}
+  </div>`;
+}
+
+async function openFix(project, task, kind) {
+  S.fix = { project, task, kind };
+  $('#fixBody').innerHTML = '<div class="meta">loading…</div>';
+  $('#fixModal').classList.add('on');
+  try {
+    const d = await api(`/api/problem?project=${encodeURIComponent(project)}&task=${encodeURIComponent(task || '')}&kind=${encodeURIComponent(kind || '')}`);
+    S.fixDetail = d;
+    renderFix(d);
+  } catch (err) {
+    $('#fixBody').innerHTML = `<h3>${esc(project)} ${esc(task || '')}</h3><p>${esc(err.message)}</p>`;
+  }
+}
+function renderFix(d) {
+  const acts = (d.actions || []);
+  const noteHint = acts.includes('answer') ? 'Your answer to the agent (sent with the task when it goes back)'
+    : acts.includes('commit-base') ? 'Commit message (optional)'
+    : 'Optional guidance for the agent, e.g. "keep the base\'s API, rename the new field"';
+  const sections = d.sections || [];
+  $('#fixBody').innerHTML = `
+    <div class="prob-top" style="margin-bottom:6px">
+      <span class="kind ${esc(d.kind)}">${esc(KIND_LABEL[d.kind] || d.kind)}</span>
+      <span class="prob-where">${esc([d.project, d.task].filter(Boolean).join(' · '))}${d.title ? ' — ' + esc(d.title) : ''}</span>
+    </div>
+    <h3 style="font-size:19px;margin:4px 0 6px">${esc(d.headline || '')}</h3>
+    <p style="font-size:13.5px;color:#c9d1e0">${esc(d.summary || '')}</p>
+    ${d.question ? `<div class="prob-q" style="margin-bottom:10px"><b>The agent asks:</b>\n${esc(d.question)}</div>` : ''}
+    <div class="callout"><b>What to do:</b> ${esc(d.next || '')}</div>
+    ${d.warning ? `<div class="prob-warn" style="margin-bottom:8px">⚠ ${esc(d.warning)}</div>` : ''}
+    ${acts.some(a => ['agent-fix','answer','resume','commit-base'].includes(a)) ? `<textarea class="fix-note" id="fixNote" placeholder="${esc(noteHint)}"></textarea>` : ''}
+    <div class="fix-acts">
+      ${acts.map((a, i) => `<button class="btn ${i === 0 ? 'primary' : (['clean','run-fresh'].includes(a) ? 'danger' : '')}" ${fxAttrs(d, a)} title="${esc((d.labels || {})[a] || '')}">${esc(ACTION_LABEL[a] || a)}</button>`).join('')}
+    </div>
+    <div class="err" id="fixErr"></div>
+    <div class="section-title">everything recorded</div>
+    ${sections.map((sec, i) => `<details class="sec" ${i < 3 ? 'open' : ''}>
+      <summary>${esc(sec.label)}<button class="btn small ghost copy" data-fx="copy" data-idx="${i}">copy</button></summary>
+      <div class="sec-body">${sec.kind === 'code' ? `<pre>${esc(sec.text)}</pre>` : `<div class="prose">${esc(sec.text)}</div>`}</div>
+    </details>`).join('') || '<div class="meta">nothing else recorded</div>'}
+  `;
+}
+
+async function doFix(btn) {
+  const action = btn.dataset.fx;
+  const project = btn.dataset.project;
+  const task = btn.dataset.task;
+  const kind = btn.dataset.kind;
+  if (action === 'fix-open') return openFix(project, task, kind);
+  if (action === 'resolve') { $('#fixModal').classList.remove('on'); return openConflict(project, task); }
+  if (action === 'open') { $('#fixModal').classList.remove('on'); return loadDetail(project, task); }
+  if (action === 'inbox-toggle') { S.inboxAll = !S.inboxAll; return renderInbox(); }
+  if (action === 'copy') {
+    const sec = (S.fixDetail?.sections || [])[Number(btn.dataset.idx)];
+    if (sec) { try { await navigator.clipboard.writeText(sec.text); toast('copied'); } catch (e) { toast('copy failed', true); } }
+    return;
+  }
+  const inModal = $('#fixModal').classList.contains('on') && S.fix && S.fix.project === project && (S.fix.task || '') === (task || '');
+  const noteEl = inModal ? $('#fixNote') : null;
+  let note = noteEl ? noteEl.value.trim() : '';
+  if (NEEDS_NOTE.has(action) && !inModal) return openFix(project, task, kind);
+  if (action === 'answer' && !note) { $('#fixErr').textContent = 'Write your answer first.'; noteEl && noteEl.focus(); return; }
+  if (CONFIRM[action] && !confirm(CONFIRM[action])) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'working…';
+  try {
+    const res = await post('/api/fix', { project, task, action, note });
+    toast(res.message || `${action} done`);
+    $('#fixModal').classList.remove('on');
+    setTimeout(refresh, 400);
+  } catch (err) {
+    if (inModal) $('#fixErr').textContent = err.message;
+    toast(err.message.split('\n')[0], true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+// ---- conflict resolver ----
+async function openConflict(project, task) {
+  S.cf = { project, task, file: null, tab: 'edit', data: null, fileData: null };
+  $('#cfTitle').textContent = `resolve conflicts · ${project} ${task}`;
+  $('#cfSub').textContent = '';
+  $('#cfBody').innerHTML = '<div class="meta">loading…</div>';
+  $('#conflictModal').classList.add('on');
+  await loadConflict();
+}
+async function loadConflict() {
+  const { project, task } = S.cf;
+  try {
+    S.cf.data = await api(`/api/conflict?project=${encodeURIComponent(project)}&task=${encodeURIComponent(task)}`);
+    const unresolved = S.cf.data.files.map(f => f.path);
+    if (!S.cf.file || !unresolved.includes(S.cf.file)) S.cf.file = unresolved[0] || null;
+    S.cf.fileData = null;
+    renderConflict();
+    if (S.cf.file) await loadConflictFile(S.cf.file);
+  } catch (err) {
+    $('#cfBody').innerHTML = `<p style="color:var(--red)">${esc(err.message)}</p>`;
+  }
+}
+async function loadConflictFile(path) {
+  const { project, task } = S.cf;
+  S.cf.file = path;
+  try {
+    S.cf.fileData = await api(`/api/conflict/file?project=${encodeURIComponent(project)}&task=${encodeURIComponent(task)}&path=${encodeURIComponent(path)}`);
+    if (S.cf.fileData.binary || S.cf.fileData.working == null) S.cf.tab = 'ours';
+    renderConflict();
+  } catch (err) { toast(err.message, true); }
+}
+function markConflict(text) {
+  let zone = '';
+  // One block per line, joined without newlines (blocks already break lines).
+  return (text || '').split('\n').map(line => {
+    if (/^<{7}( |$)/.test(line)) { zone = 'ours'; return `<span class="ln mk">${esc(line)}  ← task's version below</span>`; }
+    if (/^={7}$/.test(line)) { zone = 'theirs'; return `<span class="ln mk">${esc(line)}  ← base's version below</span>`; }
+    if (/^>{7}( |$)/.test(line)) { zone = ''; return `<span class="ln mk">${esc(line)}</span>`; }
+    return `<span class="ln ${zone}">${esc(line) || ' '}</span>`;
+  }).join('');
+}
+function renderConflict() {
+  const d = S.cf.data;
+  if (!d) return;
+  $('#cfSub').textContent = `branch ${d.branch} ← ${d.base} · worktree ${shortPath(d.worktree)}`;
+  $('#conflictModal .modal-card').classList.toggle('short', !d.merging);
+  if (!d.merging) {
+    const files = d.predicted || [];
+    $('#cfBody').innerHTML = `<div class="cf-intro">
+      ${files.length ? `<p><b>${files.length} file(s)</b> changed on both <span class="mono">${esc(d.base)}</span> and the task branch:</p>
+        <pre style="max-height:30vh;overflow:auto">${esc(files.join('\n'))}</pre>` : `<p>Right now <span class="mono">${esc(d.base)}</span> and the branch merge cleanly. Starting will bring the base into the branch and finish on its own.</p>`}
+      <p>How this works. It all happens in the task's own worktree; your main checkout is not touched:</p>
+      <ol>
+        <li><b>Start</b> merges <span class="mono">${esc(d.base)}</span> into the task branch.</li>
+        <li>For each file, keep the <b>task's</b> version, keep the <b>base's</b> version, or <b>edit</b> the combined file.</li>
+        <li><b>Finish & merge</b> commits it and squash-merges the task (now conflict-free). Or <b>finish & re-verify</b> to have the verifier check the result first.</li>
+      </ol>
+      ${d.dirty ? `<p class="prob-warn">The worktree has uncommitted agent work. Start commits it to the branch first:</p><pre>${esc(d.dirty)}</pre>` : ''}
+      ${d.base_dirty ? `<p class="prob-warn">⚠ The main checkout has uncommitted changes. Resolving works, but the final merge will wait until they are committed or stashed.</p>` : ''}
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-close="conflictModal">cancel</button>
+      <button class="btn" data-cf="agent">let the agent do it instead</button>
+      <button class="btn primary" data-cf="start">start resolving</button>
+    </div>`;
+    return;
+  }
+  const f = S.cf.fileData;
+  const total = d.files.length;
+  const fileList = d.files.map(x => `<button class="cf-file ${x.path === S.cf.file ? 'on' : ''}" data-cf="file" data-path="${esc(x.path)}">
+      <span class="st fail">●</span><span class="p">${esc(x.path)}${x.markers ? ` <span style="color:var(--muted-2)">(${x.markers})</span>` : ''}</span></button>`).join('')
+    + (d.resolved || []).filter(p => !d.files.some(x => x.path === p)).map(p => `<div class="cf-file" style="cursor:default;color:var(--muted)"><span class="st pass">✓</span><span class="p">${esc(p)}</span></div>`).join('');
+  let pane = '';
+  if (!total) {
+    pane = `<div class="cf-intro"><p style="color:var(--green)"><b>All conflicts resolved.</b></p>
+      <p>Finish to commit the merge. <b>Finish & merge</b> lands the task in <span class="mono">${esc(d.base)}</span> now. <b>Finish & re-verify</b> runs the checks and verifier on the combined code first, which is safer when you edited code by hand.</p></div>`;
+  } else if (!f) {
+    pane = '<div class="meta">loading file…</div>';
+  } else {
+    const oursDeleted = f.ours == null, theirsDeleted = f.theirs == null;
+    const tabs = [
+      ['edit', 'combined (edit)'], ['ours', `task's version${oursDeleted ? ' (deleted)' : ''}`], ['theirs', `base's version${theirsDeleted ? ' (deleted)' : ''}`],
+    ].filter(([k]) => k !== 'edit' || (!f.binary && f.working != null));
+    let view = '';
+    if (S.cf.tab === 'edit') view = `<div class="cf-legend"><span class="l-ours">task's lines</span><span class="l-theirs">base's lines</span><span>remove the &lt;&lt;&lt;&lt;&lt;&lt;&lt; ======= &gt;&gt;&gt;&gt;&gt;&gt;&gt; markers and keep what should stay</span></div>
+      <pre class="cf-view" id="cfPreview">${markConflict(f.working)}</pre>
+      <textarea class="cf-edit" id="cfEdit" spellcheck="false" style="display:none">${esc(f.working || '')}</textarea>`;
+    else if (S.cf.tab === 'ours') view = oursDeleted ? '<div class="meta">The task branch deleted this file.</div>' : `<pre class="cf-view">${esc(f.ours)}</pre>`;
+    else view = theirsDeleted ? `<div class="meta">${esc(d.base)} deleted this file.</div>` : `<pre class="cf-view">${esc(f.theirs)}</pre>`;
+    pane = `<div class="cf-bar"><span class="mono" style="font-size:12px;overflow-wrap:anywhere">${esc(f.path)}</span></div>
+      <div class="cf-tabs">${tabs.map(([k, l]) => `<button class="cf-tab ${S.cf.tab === k ? 'on' : ''}" data-cf="tab" data-tab="${k}">${l}</button>`).join('')}</div>
+      ${view}
+      <div class="cf-bar">
+        <button class="btn small" data-cf="keep" data-mode="ours">${oursDeleted ? 'delete (as the task did)' : "keep task's version"}</button>
+        <button class="btn small" data-cf="keep" data-mode="theirs">${theirsDeleted ? `delete (as ${esc(d.base)} did)` : "keep base's version"}</button>
+        ${S.cf.tab === 'edit' ? `<button class="btn small" data-cf="edit-toggle" id="cfEditBtn">edit by hand</button>
+        <button class="btn small primary" data-cf="save" id="cfSave" style="display:none">save this file</button>` : ''}
+      </div>`;
+  }
+  $('#cfBody').innerHTML = `
+    <div class="cf-layout">
+      <div class="cf-files">${fileList || '<div class="meta" style="padding:10px">no files</div>'}</div>
+      <div class="cf-pane">${pane}</div>
+    </div>
+    <div class="err" id="cfErr"></div>
+    <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap">
+      <button class="btn danger" data-cf="abort">abort (undo the merge)</button>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-cf="finish" data-then="verify" ${total ? 'disabled' : ''}>finish & re-verify</button>
+        <button class="btn primary" data-cf="finish" data-then="merge" ${total ? 'disabled' : ''}>finish & merge</button>
+      </span>
+    </div>`;
+}
+async function cfAction(btn) {
+  const op = btn.dataset.cf;
+  const { project, task } = S.cf;
+  const err = (m) => { const el = $('#cfErr'); if (el) el.textContent = m; toast(m.split('\n')[0], true); };
+  try {
+    if (op === 'file') return loadConflictFile(btn.dataset.path);
+    if (op === 'tab') { S.cf.tab = btn.dataset.tab; return renderConflict(); }
+    if (op === 'edit-toggle') {
+      const editing = $('#cfEdit').style.display === 'none';
+      $('#cfEdit').style.display = editing ? '' : 'none';
+      $('#cfPreview').style.display = editing ? 'none' : '';
+      $('#cfSave').style.display = editing ? '' : 'none';
+      btn.textContent = editing ? 'show highlighted' : 'edit by hand';
+      if (editing) $('#cfEdit').focus();
+      return;
+    }
+    if (op === 'agent') {
+      $('#conflictModal').classList.remove('on');
+      const res = await post('/api/fix', { project, task, action: 'agent-fix' });
+      toast(res.message);
+      return setTimeout(refresh, 400);
+    }
+    btn.disabled = true;
+    if (op === 'start') {
+      const res = await post('/api/conflict', { project, task, op: 'start' });
+      if (res.clean) toast('merged the base cleanly; no conflicts');
+      S.cf.data = res;
+    } else if (op === 'keep') {
+      S.cf.data = await post('/api/conflict', { project, task, op: 'resolve', path: S.cf.file, mode: btn.dataset.mode });
+      toast(`${S.cf.file} resolved`);
+    } else if (op === 'save') {
+      S.cf.data = await post('/api/conflict', { project, task, op: 'resolve', path: S.cf.file, mode: 'content', content: $('#cfEdit').value });
+      toast(`${S.cf.file} saved`);
+    } else if (op === 'abort') {
+      if (!confirm('Undo the merge in the worktree? Your file choices are discarded; the branch goes back to how it was.')) { btn.disabled = false; return; }
+      S.cf.data = await post('/api/conflict', { project, task, op: 'abort' });
+      toast('merge aborted');
+    } else if (op === 'finish') {
+      const res = await post('/api/conflict', { project, task, op: 'finish', then: btn.dataset.then });
+      if (res.merge_error) { err('Resolved and committed, but the merge failed:\n' + res.merge_error); setTimeout(refresh, 300); return loadConflict(); }
+      toast(btn.dataset.then === 'merge' ? `${task} merged` : `${task} resolved; re-verifying`);
+      $('#conflictModal').classList.remove('on');
+      return setTimeout(refresh, 400);
+    }
+    await loadConflict();
+  } catch (e) {
+    err(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+// Capture phase so card/drawer click handlers never see these buttons.
+document.addEventListener('click', (e) => {
+  const fx = e.target.closest('[data-fx]');
+  if (fx) { e.preventDefault(); e.stopPropagation(); doFix(fx); return; }
+  const cf = e.target.closest('[data-cf]');
+  if (cf) { e.preventDefault(); e.stopPropagation(); cfAction(cf); }
+}, true);
+
 function render() {
   const st = S.state;
   if (!st) return;
+  renderInbox();
   const t = st.totals;
   const liveCount = (st.projects || []).reduce((n, p) => n + (p.sessions || []).length, 0) + (st.external || []).length;
   const sup = st.supervisor || {};
@@ -940,7 +1440,7 @@ function render() {
     <div class="stat">done <b>${t.done}</b></div>
     <div class="stat">today <b>$${Number(t.cost_today).toFixed(2)}</b></div>`;
   const external = st.external || [];
-  const rank = p => (!p.configured ? 3 : (p.current || p.attention ? 0 : 1));
+  const rank = p => (!p.configured ? 3 : ((p.problems || []).length || p.current || p.attention ? 0 : 1));
   const ordered = [...st.projects].sort((a, b) => rank(a) - rank(b));
   $('#external').innerHTML = external.length ? `<div class="live-strip">
     <h3>live sessions outside your projects</h3>
@@ -990,6 +1490,7 @@ function equalizeCardHeights() {
 async function refresh() {
   try {
     S.state = await api('/api/state');
+    $('#logoutForm').style.display = S.state.auth ? '' : 'none';
     render();
     if (S.key) await loadDetail(S.key.project, S.key.task, true);
   } catch (err) {
@@ -1063,7 +1564,9 @@ function renderDrawer() {
 function overviewHtml(d) {
   const checks = Object.entries(d.checks || {});
   const events = (d.events || []).slice(-8);
-  return `
+  const proj = (S.state?.projects || []).find(x => x.name === d.project);
+  const prob = (proj?.problems || []).find(x => x.task === d.task);
+  return `${prob ? `<div style="margin-bottom:18px">${problemRow(prob, true)}</div>` : ''}
     <dl class="kv">
       <dt>project</dt><dd class="mono">${esc(d.project)}</dd>
       <dt>task</dt><dd>${esc(d.title || '')}</dd>
@@ -1231,7 +1734,8 @@ function openTasks(project) {
       : '';
     return `<div class="task-row ${t.state === 'x' ? 'done' : ''} ${isBlocked ? 'blocked' : ''}">
       <span class="tid">${esc(t.id)}</span>
-      <span class="nt">${esc(t.title)}${isBlocked ? `<div class="meta" style="color:var(--amber)">blocked · ${esc((blocked[t.id] || {}).reason || '')}</div>` : ''}</span>
+      <span class="nt">${esc(t.title)}${isBlocked ? `<div class="meta" style="color:var(--amber);white-space:pre-wrap">blocked · ${esc(((blocked[t.id] || {}).reason || '').slice(0, 400))}</div>` : ''}</span>
+      ${isBlocked ? `<button class="btn small primary" data-fx="fix-open" data-project="${esc(project)}" data-task="${esc(t.id)}">fix</button>` : ''}
       ${button}
     </div>`;
   };
@@ -1471,7 +1975,7 @@ $('#tabs').addEventListener('click', (e) => {
 $('#closeDrawer').addEventListener('click', () => setDrawer(false));
 $('#backdrop').addEventListener('click', () => setDrawer(false));
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { setDrawer(false); $('#addModal').classList.remove('on'); $('#modelModal').classList.remove('on'); $('#sessionModal').classList.remove('on'); $('#tasksModal').classList.remove('on'); $('#gitModal').classList.remove('on'); $('#logModal').classList.remove('on'); $('#chatModal').classList.remove('on'); }
+  if (e.key === 'Escape') { setDrawer(false); $('#addModal').classList.remove('on'); $('#modelModal').classList.remove('on'); $('#sessionModal').classList.remove('on'); $('#tasksModal').classList.remove('on'); $('#gitModal').classList.remove('on'); $('#logModal').classList.remove('on'); $('#chatModal').classList.remove('on'); $('#fixModal').classList.remove('on'); }
 });
 
 $('#drawer').addEventListener('click', async (e) => {
