@@ -12,6 +12,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from . import osutil
+
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config")), "agent-room")
 STATE_DIR = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.join(HOME, ".local", "state")), "agent-room")
@@ -52,6 +54,19 @@ def read_json(path: str, default: Any = None) -> Any:
         return default
 
 
+def _replace(tmp: str, path: str) -> None:
+    """os.replace, retried briefly: on Windows it fails with access denied while
+    another process (the dashboard, a loop) has the target open."""
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if not osutil.IS_WINDOWS or attempt == 19:
+                raise
+            time.sleep(0.05)
+
+
 def write_json(path: str, data: Any) -> None:
     ensure_dir(os.path.dirname(path))
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-", suffix=".json")
@@ -59,7 +74,7 @@ def write_json(path: str, data: Any) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, sort_keys=False)
             fh.write("\n")
-        os.replace(tmp, path)
+        _replace(tmp, path)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -125,39 +140,11 @@ def tail(path: str, lines: int = 80) -> str:
 
 
 def pid_alive(pid: int | None) -> bool:
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except (OSError, ProcessLookupError):
-        return False
-    # A zombie still accepts signal 0 but will never do work. Do not let a
-    # defunct loop/scheduler keep `.agent/loop.json` locked after a restart.
-    try:
-        with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as fh:
-            state = fh.read().split()[2]
-        if state == "Z":
-            return False
-    except (OSError, IndexError):
-        pass
-    return True
+    return osutil.pid_alive(pid)
 
 
 def kill_tree(pid: int, sig: int = signal.SIGTERM) -> None:
-    if not pid:
-        return
-    try:
-        pgid = os.getpgid(pid)
-        if pgid == os.getpgrp():
-            # Never take out the caller's own process group (e.g. a foreground loop).
-            os.kill(pid, sig)
-        else:
-            os.killpg(pgid, sig)
-    except (OSError, ProcessLookupError):
-        try:
-            os.kill(pid, sig)
-        except OSError:
-            pass
+    osutil.kill_tree(pid, sig)
 
 
 def _cwd_pids_lsof(prefix: str) -> list[int]:
@@ -188,6 +175,8 @@ def _cwd_pids_lsof(prefix: str) -> list[int]:
 
 def kill_cwd_processes(prefix: str, sig: int = signal.SIGTERM) -> int:
     """Kill processes whose cwd is inside a worktree (leaked dev servers)."""
+    if osutil.IS_WINDOWS:
+        return 0  # no cheap per-process cwd query; worktree removal still works
     prefix = os.path.abspath(prefix)
     killed = 0
     me = os.getpid()
@@ -229,6 +218,8 @@ def run(
     merged = dict(os.environ)
     if env:
         merged.update(env)
+    if not shell and isinstance(cmd, list):
+        cmd = osutil.resolve(cmd)
     proc = subprocess.run(
         cmd,
         cwd=cwd,

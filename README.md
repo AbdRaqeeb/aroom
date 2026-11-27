@@ -13,7 +13,9 @@ files under each repo's `.agent/`.
 
 ## Requirements
 
-- Linux or macOS with `git` and Python 3.10+
+- Linux, macOS, or Windows (natively, or in WSL2) with `git` and Python 3.10+
+- On Windows: Git for Windows, which provides `git` and Git Bash (Agent Room runs
+  project commands and agent CLIs through Git Bash)
 - One agent CLI on `PATH`: `claude` (Claude Code) or `opencode` (OpenCode)
 - Optional: `gh` for GitHub task adapter and releases
 - Each managed project must be a git repo with a clean base branch
@@ -28,6 +30,7 @@ when `python3` itself is too old.
 | --- | --- |
 | [docs/configuration.md](docs/configuration.md) | Every `.agent/config.json` key, adapters, roles, limits, push, preview |
 | [docs/architecture.md](docs/architecture.md) | Modules, run state machine, async lanes, locks, merge and push flow |
+| [docs/windows.md](docs/windows.md) | Native Windows: install, Git Bash, background tasks, long paths |
 | [docs/remote.md](docs/remote.md) | VPS install, phone access (Tailscale / Caddy), access token |
 | [docs/operations.md](docs/operations.md) | systemd/launchd services, logs, reboot recovery, backups, upgrades |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | UI/loop failures, stuck tasks, conflicts, push and quota errors |
@@ -76,6 +79,26 @@ The dashboard is then always at http://127.0.0.1:4400. Manage it with
 `launchctl kickstart -k gui/$(id -u)/com.agentroom.ui` (restart) and
 `launchctl bootout gui/$(id -u)/com.agentroom.ui` (stop). Logs are in
 `~/.local/state/agent-room/`.
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.ps1 | iex
+```
+
+To run it in the background as well (Task Scheduler: starts at logon,
+restarts on failure, no console windows):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/AbdRaqeeb/aroom/main/install.ps1))) -Service
+```
+
+You need Git for Windows and Python 3.10+ first (`winget install Git.Git Python.Python.3.12`).
+The installer puts `aroom.cmd` and `ar.cmd` in `%LOCALAPPDATA%\Programs\aroom`,
+adds that folder to your user PATH, and keeps the checkout in `%LOCALAPPDATA%\aroom`.
+Open a new terminal afterwards. Running `install.sh` from Git Bash hands over
+to `install.ps1` automatically. See [docs/windows.md](docs/windows.md) for
+details.
 
 **Upgrade:** run the same command again, or
 `git -C ~/.local/share/aroom pull --ff-only`.

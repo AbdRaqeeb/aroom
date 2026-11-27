@@ -9,6 +9,7 @@ import sys
 import time
 
 from . import config as project_config
+from . import osutil
 from . import gitops, pipeline, tasks as tasklib, util
 from . import supervisor as supervisor_mod
 
@@ -95,7 +96,7 @@ def spawn_child(kind: str, project: str, repo: str, task: str) -> int:
             cwd=repo,
             stdout=log_file,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     return proc.pid
 
@@ -106,7 +107,7 @@ def stop_pid(pid: int | None) -> None:
     util.kill_tree(pid, signal.SIGTERM)
     time.sleep(1)
     if util.pid_alive(pid):
-        util.kill_tree(pid, signal.SIGKILL)
+        util.kill_tree(pid, osutil.SIGKILL)
 
 
 def run_json(run: dict, repo: str) -> str:

@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.0 — 2026-11-27
+
+### Native Windows
+
+- `install.ps1` installs from PowerShell (`irm …/install.ps1 | iex`). It checks
+  for Git for Windows and Python 3.10+ (skipping the Microsoft Store stub),
+  clones or updates `%LOCALAPPDATA%\aroom`, writes `aroom.cmd` and `ar.cmd`,
+  and adds them to the user PATH. `-Service` registers Task Scheduler tasks for
+  the dashboard and the supervisor (start at logon, restart on failure, no
+  console windows, logs in `~\.local\state\agent-room`). Running `install.sh`
+  from Git Bash hands over to it.
+- New `agentroom/osutil.py` holds the platform differences. Project commands
+  and agent CLIs run through Git Bash (never the WSL `bash.exe`). Background
+  processes get their own process group without a console. Process trees stop
+  with `taskkill /T`, and liveness uses the Windows API: `os.kill(pid, 0)`
+  would send Ctrl+C on Windows. `.cmd` shims (`claude`, `gh`) resolve through
+  PATHEXT, and UTF-8 is forced.
+- The agent runner reads output on a thread instead of `select()`, which only
+  works on sockets on Windows.
+- State files retry their atomic replace briefly on Windows while another
+  process has them open.
+- `aroom doctor` reports the bash it will use. The launcher accepts
+  `--log=FILE` for services without a terminal.
+
+
 ## v1.2.1 — 2026-11-27
 
 - `install.sh --service` now works on macOS: it writes launchd agents for the

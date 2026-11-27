@@ -113,6 +113,18 @@ MSG
     exec bash "$AROOM_HOME/install.sh" ${args[@]+"${args[@]}"}
 fi
 
+# Git Bash / MSYS / Cygwin on Windows: the native Windows installer does the
+# work (launcher .cmd files, user PATH, Task Scheduler for --service).
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        echo "windows:   handing over to install.ps1"
+        ps_args=()
+        [ "$WITH_SERVICE" = 1 ] && ps_args+=(-Service)
+        [ -n "$LISTEN" ] && ps_args+=(-Listen "$LISTEN")
+        exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$HERE/install.ps1")" ${ps_args[@]+"${ps_args[@]}"}
+        ;;
+esac
+
 BIN_DIR="$HOME/.local/bin"
 LAUNCHER="$BIN_DIR/aroom"
 

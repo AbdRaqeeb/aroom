@@ -11,6 +11,7 @@ import time
 import uuid
 
 from . import config as project_config
+from . import osutil
 from . import util
 
 AR_MAIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ar")
@@ -82,7 +83,7 @@ def send(project: str, message: str) -> dict:
             cwd=repo,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     state["pid"] = proc.pid
     save(repo, state)
@@ -104,7 +105,7 @@ def _prompt(project: str, repo: str, message: str, first: bool) -> str:
 def _run(cmd: list[str], cwd: str, timeout: int) -> subprocess.CompletedProcess:
     shell_command = shlex.join(cmd)
     return subprocess.run(
-        ["bash", "-lc", shell_command],
+        [osutil.bash(), "-lc", shell_command],
         cwd=cwd,
         text=True,
         capture_output=True,

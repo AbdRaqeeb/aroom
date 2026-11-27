@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from . import auth
+from . import osutil
 from . import config as project_config
 from . import activity, conflicts, diagnose
 from . import chat, gitops, models, pipeline, preview, runners, sessions, tasks as tasklib, util
@@ -416,7 +417,7 @@ def start_run(payload: dict) -> dict:
             cwd=repo,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     return {"pid": proc.pid, "log": log_path, "command": command}
 
@@ -471,7 +472,7 @@ def start_resume(payload: dict) -> dict:
             cwd=repo,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     return {"pid": proc.pid, "log": log_path, "command": command}
 
@@ -497,7 +498,7 @@ def start_verify(payload: dict) -> dict:
             cwd=repo,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     return {"pid": proc.pid, "log": log_path, "command": command}
 

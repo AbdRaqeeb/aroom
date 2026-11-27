@@ -10,6 +10,7 @@ import sys
 import time
 
 from . import config as project_config
+from . import osutil
 from . import __version__
 from . import async_loop, chat, gitops, models, pipeline, preview, supervisor, ui, util
 
@@ -232,7 +233,7 @@ def cmd_run(args) -> int:
                 env=env,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **osutil.DETACH,
             )
         print(f"started {project} in the background (pid {proc.pid})")
         print(f"log: {log_path}")
@@ -313,7 +314,7 @@ def cmd_resume(args) -> int:
                 cwd=repo,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **osutil.DETACH,
             )
         print(f"resuming {project} {task_id} in the background (pid {proc.pid})")
         print(f"log: {log_path}")
@@ -521,7 +522,7 @@ def cmd_supervise(args) -> int:
                 cwd=os.path.expanduser("~"),
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **osutil.DETACH,
             )
         util.write_json(supervisor.PID_PATH, {"pid": proc.pid, "started": util.now_iso()})
         print(f"supervisor started (pid {proc.pid})")
@@ -715,6 +716,16 @@ def cmd_token(args) -> int:
     return 0
 
 
+def _bash_or_none() -> str | None:
+    from . import osutil
+
+    try:
+        path = osutil.bash()
+    except SystemExit:
+        return None
+    return util.which(path) if not os.path.isabs(path) else path
+
+
 def cmd_doctor(_args) -> int:
     checks = [
         ("python", sys.executable),
@@ -722,11 +733,12 @@ def cmd_doctor(_args) -> int:
         ("gh", util.which("gh")),
         ("claude", util.which("claude")),
         ("opencode", util.which("opencode")),
+        ("bash", _bash_or_none()),
     ]
     ok = True
     for name, path in checks:
         print(f"{name:<10} {path or 'MISSING'}")
-        if name in {"python", "git"} and not path:
+        if name in {"python", "git", "bash"} and not path:
             ok = False
     reg = project_config.load_registry()
     print(f"registry   {util.REGISTRY} ({len(reg['projects'])} projects)")

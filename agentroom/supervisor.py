@@ -9,6 +9,7 @@ import sys
 import time
 
 from . import config as project_config
+from . import osutil
 from . import pipeline, runners, tasks as tasklib, util
 
 AR_MAIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ar")
@@ -122,7 +123,7 @@ def spawn(cmd: list[str], repo: str) -> int:
             cwd=repo,
             stdout=fh,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     return proc.pid
 

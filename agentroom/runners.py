@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-import select
+import queue
 import shlex
 import signal
 import subprocess
+import threading
 import time
 from typing import Any
 
 from . import util
+from . import osutil
 
 
 def emit(run_dir: str, run: dict, actor: str, kind: str, text: str, detail: Any = None) -> None:
@@ -237,26 +239,41 @@ def _spawn(cmd: list[str], cwd: str, env: dict[str, str], run_dir: str, run: dic
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            start_new_session=True,
+            **osutil.DETACH,
         )
         run["pid"] = proc.pid
         util.write_json(os.path.join(run_dir, "run.json"), run)
         deadline = time.time() + float(run.get("_timeout_min", 60)) * 60
         timed_out = False
         assert proc.stdout is not None
+        # A reader thread instead of select(): select() only works on sockets
+        # on Windows. None marks end of output.
+        lines: queue.Queue[str | None] = queue.Queue()
+
+        def pump(stream=proc.stdout) -> None:
+            try:
+                for item in iter(stream.readline, ""):
+                    lines.put(item)
+            finally:
+                lines.put(None)
+
+        threading.Thread(target=pump, name=f"{actor}-output", daemon=True).start()
         while True:
-            if proc.poll() is not None:
-                # drain whatever is buffered
-                rest = proc.stdout.read()
-                if rest:
-                    for line in rest.splitlines():
-                        log.write(line + "\n")
+            try:
+                line = lines.get(timeout=1.0)
+            except queue.Empty:
+                line = ""
+                if proc.poll() is not None and lines.empty():
+                    # Output closed without the sentinel yet; give the reader a moment.
+                    try:
+                        line = lines.get(timeout=2.0) or ""
+                    except queue.Empty:
+                        break
+                    if not line:
+                        break
+            if line is None:
                 break
-            ready, _, _ = select.select([proc.stdout], [], [], 1.0)
-            if ready:
-                line = proc.stdout.readline()
-                if line == "":
-                    break
+            if line:
                 log.write(line)
                 log.flush()
                 line = line.rstrip("\n")
@@ -267,15 +284,9 @@ def _spawn(cmd: list[str], cwd: str, env: dict[str, str], run_dir: str, run: dic
             if time.time() > deadline:
                 timed_out = True
                 emit(run_dir, run, actor, "warn", "timeout — stopping the session")
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                except OSError:
-                    pass
+                util.kill_tree(proc.pid, signal.SIGTERM)
                 time.sleep(2)
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except OSError:
-                    pass
+                util.kill_tree(proc.pid, osutil.SIGKILL)
                 break
         code = proc.wait()
         if timed_out:
@@ -330,7 +341,7 @@ def run_agent(
         prefix = f"set -a; source {shlex.quote(env_script)}; set +a; "
     # Login shell so nvm/fnm/asdf paths are present for the agent and its hooks.
     inner = shlex.join(cmd)
-    cmd = ["bash", "-lc", f"{prefix}exec {inner}"]
+    cmd = [osutil.bash(), "-lc", f"{prefix}exec {inner}"]
 
     started = time.time()
     code = _spawn(cmd, cwd, env, run_dir, run, kind, runner)

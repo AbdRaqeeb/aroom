@@ -14,6 +14,7 @@ import traceback
 from typing import Any
 
 from . import config as project_config
+from . import osutil
 from . import gitops, runners, tasks as tasklib, util
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates")
@@ -241,7 +242,7 @@ def shell_command(cfg: dict, worktree: str, command: str) -> list[str]:
     prefix = ""
     if env_script and os.path.isfile(os.path.join(worktree, env_script)):
         prefix = f"set -a; source {shlex.quote(env_script)}; set +a; "
-    return ["bash", "-lc", prefix + command]
+    return [osutil.bash(), "-lc", prefix + command]
 
 
 def execute(cfg: dict, worktree: str, command: str, log_path: str, timeout_min: float) -> tuple[int, float]:
@@ -255,7 +256,7 @@ def execute(cfg: dict, worktree: str, command: str, log_path: str, timeout_min: 
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            start_new_session=True,
+            **osutil.DETACH,
         )
         try:
             assert proc.stdout is not None
@@ -264,11 +265,11 @@ def execute(cfg: dict, worktree: str, command: str, log_path: str, timeout_min: 
                 fh.flush()
             code = proc.wait(timeout=max(1, timeout_min * 60 - (time.time() - started)))
         except subprocess.TimeoutExpired:
-            util.kill_tree(proc.pid, signal.SIGKILL)
+            util.kill_tree(proc.pid, osutil.SIGKILL)
             fh.write("\n[agent-room] timeout\n")
             code = -9
         except Exception:
-            util.kill_tree(proc.pid, signal.SIGKILL)
+            util.kill_tree(proc.pid, osutil.SIGKILL)
             raise
     return code, round(time.time() - started, 1)
 
@@ -1733,7 +1734,7 @@ def stop(project: str) -> bool:
         util.kill_tree(loop["pid"], signal.SIGTERM)
         time.sleep(1)
         if util.pid_alive(loop["pid"]):
-            util.kill_tree(loop["pid"], signal.SIGKILL)
+            util.kill_tree(loop["pid"], osutil.SIGKILL)
         print(f"{project}: stopped loop pid {loop['pid']}")
         stopped = True
         try:
@@ -1758,7 +1759,7 @@ def stop(project: str) -> bool:
             util.kill_tree(pid, signal.SIGTERM)
             time.sleep(1)
             if util.pid_alive(pid):
-                util.kill_tree(pid, signal.SIGKILL)
+                util.kill_tree(pid, osutil.SIGKILL)
             print(f"{project}: stopped pid {pid} ({entry.get('task')})")
             stopped = True
     try:
@@ -1776,7 +1777,7 @@ def stop(project: str) -> bool:
             util.kill_tree(pid, signal.SIGTERM)
             time.sleep(1)
             if util.pid_alive(pid):
-                util.kill_tree(pid, signal.SIGKILL)
+                util.kill_tree(pid, osutil.SIGKILL)
             print(f"{project}: stopped pid {pid} ({data.get('task')})")
             stopped = True
         directory = data.get("run_dir")

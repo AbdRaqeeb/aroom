@@ -6,6 +6,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Background services (launchd, Task Scheduler with pythonw.exe) have no
+# terminal; `--log=FILE` as the first argument sends output there instead.
+if len(sys.argv) > 1 and sys.argv[1].startswith("--log="):
+    _log_path = os.path.expanduser(sys.argv.pop(1)[len("--log="):])
+    os.makedirs(os.path.dirname(_log_path) or ".", exist_ok=True)
+    _log = open(_log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stderr = _log
+
+from agentroom import osutil  # noqa: E402
+
+osutil.setup()
+
 from agentroom.cli import main  # noqa: E402
 
 if __name__ == "__main__":

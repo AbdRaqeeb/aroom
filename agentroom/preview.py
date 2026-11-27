@@ -10,6 +10,7 @@ import subprocess
 import time
 
 from . import config as project_config
+from . import osutil
 from . import util
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -116,11 +117,11 @@ def start(project: str) -> dict:
         log.write(f"\n=== {util.now_iso()} {command} ({cwd}) ===\n")
         log.flush()
         proc = subprocess.Popen(
-            ["bash", "-lc", shell_command],
+            [osutil.bash(), "-lc", shell_command],
             cwd=cwd,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **osutil.DETACH,
         )
     util.write_json(
         state_path(repo),
